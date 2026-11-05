@@ -1,48 +1,93 @@
-import React from 'react'
-import ReactDOM from 'react-dom/client'
+
+import React, { useState } from 'react';
+import ReactDOM from 'react-dom/client';
+import './style.css';
 
 function App() {
+  const [url, setUrl] = useState('');
+  const [search, setSearch] = useState('');
+  const [video, setVideo] = useState('');
+
+  function playVideo() {
+    const match = url.match(
+      /(?:youtube\.com\/(?:watch\?v=|embed\/)|youtu\.be\/)([a-zA-Z0-9_-]{11})/
+    );
+    if (match) {
+      setVideo(match[1]);
+    } else {
+      alert('براہ کرم درست YouTube ویڈیو لنک درج کریں۔');
+    }
+  }
+
   return (
-    <div style={{ 
-      fontFamily: 'Arial, sans-serif', 
-      textAlign: 'center', 
-      padding: '50px',
-      backgroundColor: '#f4f4f9',
-      color: '#333',
+    <div style={{
       minHeight: '100vh',
-      display: 'flex',
-      flexDirection: 'column',
-      justifyContent: 'center',
-      alignItems: 'center'
+      background: '#101010',
+      color: 'white',
+      fontFamily: 'Arial',
+      padding: '20px'
     }}>
-      <h1 style={{ fontSize: '3rem', color: '#0070f3', marginBottom: '20px' }}>
-        Welcome to TUBEXA
-      </h1>
-      <p style={{ fontSize: '1.2rem', maxWidth: '600px', lineHeight: '1.6' }}>
-        آپ کی ویب سائٹ کامیابی کے ساتھ Vercel پر لائیو ہو چکی ہے! یہ آپ کا اصل ہوم پیج ہے۔ اب آپ یہاں اپنی مرضی کا ڈیزائن اور مواد شامل کر سکتے ہیں۔
-      </p>
-      <div style={{ marginTop: '30px' }}>
-        <a 
-          href="https://tubexa-119x.vercel.app" 
-          style={{ 
-            backgroundColor: '#0070f3', 
-            color: 'white', 
-            padding: '12px 25px', 
-            textDecoration: 'none', 
-            borderRadius: '5px',
-            fontWeight: 'bold',
-            boxShadow: '0 4px 6px rgba(0,0,0,0.1)'
-          }}
-        >
-          Live Website
-        </a>
+      <header style={{
+        display: 'flex',
+        justifyContent: 'space-between',
+        alignItems: 'center',
+        flexWrap: 'wrap',
+        gap: '15px'
+      }}>
+        <h1 style={{color: '#ff3030'}}>TUBEXA</h1>
+        <input
+          placeholder="Search videos..."
+          value={search}
+          onChange={e => setSearch(e.target.value)}
+          style={{padding: '12px', borderRadius: '20px'}}
+        />
+      </header>
+
+      <h2>Welcome to TUBEXA</h2>
+      <p>Discover and watch videos in one place.</p>
+
+      <div style={{marginTop: '25px'}}>
+        <h3>Play a YouTube Video</h3>
+        <input
+          value={url}
+          onChange={e => setUrl(e.target.value)}
+          placeholder="Paste YouTube video link"
+          style={{padding: '12px', width: '70%', maxWidth: '450px'}}
+        />
+        <button onClick={playVideo}
+          style={{
+            padding: '12px 20px',
+            background: '#ff3030',
+            color: 'white',
+            border: 'none',
+            cursor: 'pointer'
+          }}>
+          Play Video
+        </button>
       </div>
+
+      {video && (
+        <div style={{marginTop: '25px', maxWidth: '850px'}}>
+          <iframe
+            width="100%"
+            height="450"
+            src={`https://www.youtube-nocookie.com/embed/${video}`}
+            title="TUBEXA Video Player"
+            allowFullScreen
+            style={{border: 'none', borderRadius: '12px'}}
+          />
+        </div>
+      )}
+
+      <footer style={{marginTop: '60px', color: '#999'}}>
+        © 2026 TUBEXA. All rights reserved.
+      </footer>
     </div>
-  )
+  );
 }
 
 ReactDOM.createRoot(document.getElementById('root')!).render(
   <React.StrictMode>
     <App />
-  </React.StrictMode>,
-)
+  </React.StrictMode>
+);
