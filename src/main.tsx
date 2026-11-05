@@ -2,144 +2,234 @@ import React, { useMemo, useState } from "react";
 import ReactDOM from "react-dom/client";
 
 const videos = [
-  { id: 1, title: "Gaming Zone", category: "Gaming", views: "12K views", time: "5:20", color: "linear-gradient(135deg,#6424ff,#17102f)" },
-  { id: 2, title: "Music World", category: "Music", views: "8.5K views", time: "3:45", color: "linear-gradient(135deg,#ed315d,#40152d)" },
-  { id: 3, title: "Sports Highlights", category: "Sports", views: "25K views", time: "8:12", color: "linear-gradient(135deg,#078b72,#102c27)" },
-  { id: 4, title: "Kids Cartoon", category: "Kids", views: "18K views", time: "6:30", color: "linear-gradient(135deg,#e89b20,#51300b)" },
-  { id: 5, title: "Learn Something New", category: "Education", views: "6K views", time: "10:15", color: "linear-gradient(135deg,#237bd8,#142c52)" },
-  { id: 6, title: "Entertainment Show", category: "Entertainment", views: "32K views", time: "7:05", color: "linear-gradient(135deg,#b02bd4,#381442)" },
+  { title: "Gaming Zone", category: "Gaming", views: "12K views", color: "#5125a8", icon: "🎮" },
+  { title: "Music World", category: "Music", views: "8.5K views", color: "#a5224e", icon: "🎵" },
+  { title: "Sports Highlights", category: "Sports", views: "25K views", color: "#087d67", icon: "⚽" },
+  { title: "Kids Cartoon", category: "Kids", views: "18K views", color: "#b87916", icon: "🧸" },
+  { title: "Learn Something New", category: "Education", views: "6K views", color: "#2369a8", icon: "📚" },
+  { title: "Entertainment Show", category: "Entertainment", views: "32K views", color: "#812c9c", icon: "🎬" },
 ];
 
-const categories = ["All", "Gaming", "Music", "Sports", "Kids", "Education", "Entertainment"];
+const languages = [
+  "Urdu", "Hindi", "English", "Arabic", "Spanish", "French",
+  "German", "Turkish", "Chinese", "Japanese", "Portuguese",
+  "Russian", "Bengali", "Punjabi"
+];
 
 function App() {
+  const [page, setPage] = useState("home");
   const [search, setSearch] = useState("");
   const [category, setCategory] = useState("All");
   const [youtubeUrl, setYoutubeUrl] = useState("");
   const [videoId, setVideoId] = useState("");
-  const [message, setMessage] = useState("");
+  const [videoFile, setVideoFile] = useState<File | null>(null);
+  const [sourceLanguage, setSourceLanguage] = useState("Auto Detect");
+  const [targetLanguage, setTargetLanguage] = useState("Urdu");
+  const [quality, setQuality] = useState("720p");
+  const [status, setStatus] = useState("");
 
-  const filteredVideos = useMemo(() => videos.filter((video) => {
-    const matchesCategory = category === "All" || video.category === category;
-    const matchesSearch = video.title.toLowerCase().includes(search.toLowerCase()) ||
-      video.category.toLowerCase().includes(search.toLowerCase());
-    return matchesCategory && matchesSearch;
-  }), [search, category]);
+  const filteredVideos = useMemo(() => videos.filter(v =>
+    (category === "All" || v.category === category) &&
+    (v.title.toLowerCase().includes(search.toLowerCase()) ||
+      v.category.toLowerCase().includes(search.toLowerCase()))
+  ), [search, category]);
 
   function playVideo() {
-    const match = youtubeUrl.match(/(?:youtu\.be\/|youtube\.com\/(?:watch\?v=|embed\/|shorts\/))([a-zA-Z0-9_-]{11})/);
+    const match = youtubeUrl.match(
+      /(?:youtu\.be\/|youtube\.com\/(?:watch\?v=|embed\/|shorts\/))([a-zA-Z0-9_-]{11})/
+    );
     if (match) {
       setVideoId(match[1]);
-      setMessage("");
+      setStatus("");
     } else {
-      setMessage("درست YouTube لنک درج کریں۔");
       setVideoId("");
+      setStatus("براہِ کرم درست YouTube لنک درج کریں۔");
     }
   }
 
+  function selectFile(event: React.ChangeEvent<HTMLInputElement>) {
+    const file = event.target.files?.[0];
+    if (file) {
+      if (!file.type.startsWith("video/")) {
+        setStatus("براہِ کرم ویڈیو فائل منتخب کریں۔");
+        return;
+      }
+      setVideoFile(file);
+      setStatus("ویڈیو منتخب ہو گئی ہے۔");
+    }
+  }
+
+  const styles = `
+    *{box-sizing:border-box}
+    body{margin:0;background:#090a0e;color:#fff;font-family:Arial,sans-serif}
+    button,input,select{font:inherit}
+    button{cursor:pointer}
+    .app{min-height:100vh;background:radial-gradient(ellipse at top,#24101b,#090a0e 48%)}
+    .topbar{min-height:72px;padding:12px 5%;display:flex;align-items:center;justify-content:space-between;gap:15px;border-bottom:1px solid #29252b;background:#0b0b0dee;position:sticky;top:0;z-index:5}
+    .logo{font-size:27px;font-weight:900;letter-spacing:2px;white-space:nowrap}
+    .logo span{color:#ff3155}
+    .search{width:min(350px,45vw);background:#17171d;border:1px solid #35323a;border-radius:30px;padding:12px 17px;color:white;outline:none}
+    .nav{display:flex;gap:8px;flex-wrap:wrap}
+    .nav button,.chip{border:1px solid #39343d;background:#17151b;color:#ddd;padding:10px 14px;border-radius:24px}
+    .nav button.active,.chip.active,.primary{background:#ff3155;border-color:#ff3155;color:white}
+    .hero{padding:60px 6% 40px;max-width:1300px;margin:auto}
+    .tag{color:#ff5874;font-weight:bold;letter-spacing:3px;font-size:12px}
+    h1{font-size:clamp(38px,7vw,68px);line-height:1.05;margin:17px 0}
+    h1 span{color:#ff3155}
+    .sub{color:#aaa;line-height:1.7;max-width:650px}
+    .section{max-width:1300px;margin:auto;padding:12px 6% 42px}
+    .section-title{font-size:23px;margin:12px 0 20px}
+    .categories{display:flex;gap:9px;flex-wrap:wrap;margin-bottom:25px}
+    .grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(210px,1fr));gap:17px}
+    .card{background:#15151b;border:1px solid #292832;border-radius:15px;overflow:hidden}
+    .thumb{height:140px;display:grid;place-items:center;font-size:45px}
+    .card-info{padding:14px}
+    .card-info h3{margin:0 0 8px;font-size:17px}
+    .muted{color:#999;font-size:13px}
+    .panel{background:#15151b;border:1px solid #302b34;border-radius:16px;padding:22px}
+    .field{display:flex;flex-direction:column;gap:9px;margin:17px 0}
+    .field label{color:#ddd;font-size:14px;font-weight:bold}
+    .field input,.field select{width:100%;background:#090a0e;border:1px solid #39343d;color:white;border-radius:9px;padding:13px}
+    .primary{border:0;border-radius:9px;padding:13px 20px;font-weight:bold}
+    .secondary{border:1px solid #48404b;background:#201b23;color:white;border-radius:9px;padding:12px 18px}
+    .upload{border:2px dashed #51404b;border-radius:13px;padding:28px;text-align:center;background:#100f14}
+    .upload input{margin-top:15px;max-width:100%}
+    .two{display:grid;grid-template-columns:1fr 1fr;gap:16px}
+    .notice{padding:13px;border-radius:9px;background:#28202a;color:#ffbdca;line-height:1.6;margin-top:15px;font-size:13px}
+    .player{width:100%;aspect-ratio:16/9;background:#050505;border-radius:10px;overflow:hidden;display:grid;place-items:center;color:#999;text-align:center}
+    .player iframe{width:100%;height:100%;border:0}
+    .urlrow{display:flex;gap:10px;margin-top:15px}
+    .urlrow input{flex:1;min-width:0;background:#090a0e;border:1px solid #39343d;color:white;border-radius:9px;padding:13px}
+    .message{color:#ff91a4;margin-top:12px}
+    footer{text-align:center;padding:28px;color:#777;border-top:1px solid #29252b}
+    @media(max-width:700px){.topbar{flex-wrap:wrap}.search{width:100%;order:3}.two{grid-template-columns:1fr}.urlrow{flex-direction:column}.urlrow button{width:100%}.hero{padding-top:40px}}
+  `;
+
   return (
     <div className="app">
-      <style>{`
-        *{box-sizing:border-box}
-        body{margin:0;background:#090a0e;color:#fff;font-family:Arial,sans-serif}
-        button,input{font:inherit}
-        .app{min-height:100vh;background:radial-gradient(ellipse at top,#21101b 0%,#090a0e 48%)}
-        .topbar{height:76px;padding:0 5%;display:flex;align-items:center;justify-content:space-between;border-bottom:1px solid #29252b;background:#0b0b0ddd;position:sticky;top:0;z-index:5;gap:16px}
-        .logo{font-size:27px;font-weight:900;letter-spacing:2px;color:#fff}
-        .logo span{color:#ff3155}
-        .search{width:min(390px,45vw);background:#17171d;border:1px solid #35323a;border-radius:30px;padding:13px 18px;color:white;outline:none}
-        .search:focus{border-color:#ff3155}
-        .hero{padding:65px 6% 48px;max-width:1300px;margin:auto}
-        .tag{color:#ff5874;font-weight:bold;letter-spacing:3px;font-size:12px}
-        h1{font-size:clamp(38px,7vw,70px);line-height:1.05;margin:17px 0}
-        h1 span{color:#ff3155}
-        .sub{color:#aaa;line-height:1.7;max-width:580px;font-size:16px}
-        .section{max-width:1300px;margin:auto;padding:10px 6% 45px}
-        .section-title{font-size:23px;margin:10px 0 20px}
-        .categories{display:flex;gap:10px;flex-wrap:wrap;margin-bottom:25px}
-        .chip{border:1px solid #39343d;background:#17151b;color:#ddd;padding:10px 17px;border-radius:25px;cursor:pointer}
-        .chip.active,.chip:hover{background:#ff3155;border-color:#ff3155;color:white}
-        .grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:18px}
-        .card{background:#15151b;border:1px solid #292832;border-radius:15px;overflow:hidden;cursor:pointer;transition:.2s}
-        .card:hover{transform:translateY(-5px);border-color:#ff3155}
-        .thumb{height:145px;display:flex;align-items:center;justify-content:center;font-size:45px;position:relative}
-        .duration{position:absolute;bottom:10px;right:10px;background:#080808dd;padding:5px 8px;border-radius:5px;font-size:12px}
-        .card-info{padding:15px}
-        .card-info h3{margin:0 0 9px;font-size:17px}
-        .muted{color:#999;font-size:13px}
-        .player-box{background:#15151b;border:1px solid #302b34;border-radius:15px;padding:18px}
-        .player{width:100%;aspect-ratio:16/9;background:#050505;border-radius:10px;overflow:hidden}
-        .player iframe{width:100%;height:100%;border:0}
-        .urlrow{display:flex;gap:10px;margin-top:15px}
-        .urlrow input{flex:1;min-width:0;background:#090a0e;border:1px solid #39343d;color:white;border-radius:9px;padding:13px}
-        .play{background:#ff3155;color:white;border:0;border-radius:9px;padding:13px 20px;font-weight:bold;cursor:pointer}
-        .message{color:#ff8296;margin-top:10px}
-        footer{text-align:center;padding:30px;color:#777;border-top:1px solid #29252b}
-        @media(max-width:600px){.topbar{padding:0 4%;height:66px}.logo{font-size:22px}.hero{padding-top:45px}.urlrow{flex-direction:column}.play{width:100%}}
-      `}</style>
+      <style>{styles}</style>
 
       <header className="topbar">
         <div className="logo">TUBE<span>XA</span></div>
-        <input className="search" placeholder="Search videos..." value={search} onChange={e => setSearch(e.target.value)} />
+        <div className="nav">
+          <button className={page === "home" ? "active" : ""} onClick={() => setPage("home")}>Home</button>
+          <button className={page === "dubbing" ? "active" : ""} onClick={() => setPage("dubbing")}>AI Dubbing</button>
+        </div>
+        {page === "home" && (
+          <input className="search" placeholder="Search videos..." value={search} onChange={e => setSearch(e.target.value)} />
+        )}
       </header>
 
-      <main>
-        <section className="hero">
-          <div className="tag">YOUR VIDEO WORLD</div>
-          <h1>Discover. Watch.<br /><span>Experience.</span></h1>
-          <p className="sub">Welcome to TUBEXA — explore videos, discover new categories and enjoy your video experience in one place.</p>
-        </section>
+      {page === "home" ? (
+        <main>
+          <section className="hero">
+            <div className="tag">YOUR VIDEO WORLD</div>
+            <h1>Discover. Watch.<br /><span>Experience.</span></h1>
+            <p className="sub">Welcome to TUBEXA — explore videos, discover new categories and enjoy your video experience in one place.</p>
+            <button className="primary" onClick={() => setPage("dubbing")}>Explore AI Dubbing →</button>
+          </section>
 
-        <section className="section">
-          <h2 className="section-title">Explore Categories</h2>
-          <div className="categories">
-            {categories.map(item => (
-              <button key={item} className={`chip ${category === item ? "active" : ""}`} onClick={() => setCategory(item)}>{item}</button>
-            ))}
-          </div>
-
-          <h2 className="section-title">Discover Videos</h2>
-          <div className="grid">
-            {filteredVideos.map(video => (
-              <article className="card" key={video.id} onClick={() => {
-                setYoutubeUrl("");
-                setVideoId("");
-                setMessage("یہ ڈیمو کارڈ ہے۔ ویڈیو چلانے کے لیے نیچے YouTube لنک درج کریں۔");
-              }}>
-                <div className="thumb" style={{background:video.color}}>
-                  ▶
-                  <span className="duration">{video.time}</span>
-                </div>
-                <div className="card-info">
-                  <h3>{video.title}</h3>
-                  <div className="muted">{video.category} · {video.views}</div>
-                </div>
-              </article>
-            ))}
-          </div>
-          {filteredVideos.length === 0 && <p className="muted">کوئی ویڈیو نہیں ملی۔ دوسری سرچ کریں۔</p>}
-        </section>
-
-        <section className="section">
-          <h2 className="section-title">Watch a YouTube Video</h2>
-          <div className="player-box">
-            <div className="player">
-              {videoId ? (
-                <iframe src={`https://www.youtube-nocookie.com/embed/${videoId}`} title="TUBEXA video player" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" allowFullScreen />
-              ) : (
-                <div style={{height:"100%",display:"grid",placeItems:"center",color:"#999",textAlign:"center",padding:20}}>
-                  <div><div style={{fontSize:48,color:"#ff3155"}}>▶</div>اپنا YouTube لنک نیچے درج کریں</div>
-                </div>
+          <section className="section">
+            <h2 className="section-title">Explore Categories</h2>
+            <div className="categories">
+              {["All", "Gaming", "Music", "Sports", "Kids", "Education", "Entertainment"].map(item =>
+                <button key={item} className={`chip ${category === item ? "active" : ""}`} onClick={() => setCategory(item)}>{item}</button>
               )}
             </div>
-            <div className="urlrow">
-              <input value={youtubeUrl} onChange={e => setYoutubeUrl(e.target.value)} placeholder="Paste YouTube video link here..." />
-              <button className="play" onClick={playVideo}>Play Video</button>
+            <h2 className="section-title">Discover Videos</h2>
+            <div className="grid">
+              {filteredVideos.map(v => (
+                <article className="card" key={v.title}>
+                  <div className="thumb" style={{background:v.color}}>{v.icon}</div>
+                  <div className="card-info">
+                    <h3>{v.title}</h3>
+                    <div className="muted">{v.category} · {v.views}</div>
+                  </div>
+                </article>
+              ))}
             </div>
-            {message && <div className="message">{message}</div>}
-          </div>
-        </section>
-      </main>
+            {filteredVideos.length === 0 && <p className="muted">کوئی ویڈیو نہیں ملی۔ دوسری سرچ کریں۔</p>}
+          </section>
+
+          <section className="section">
+            <h2 className="section-title">Watch a YouTube Video</h2>
+            <div className="panel">
+              <div className="player">
+                {videoId ? (
+                  <iframe src={`https://www.youtube-nocookie.com/embed/${videoId}`} title="TUBEXA video player" allowFullScreen />
+                ) : <div><div style={{fontSize:45,color:"#ff3155"}}>▶</div>YouTube ویڈیو لنک درج کریں</div>}
+              </div>
+              <div className="urlrow">
+                <input value={youtubeUrl} onChange={e => setYoutubeUrl(e.target.value)} placeholder="Paste YouTube video link..." />
+                <button className="primary" onClick={playVideo}>Play Video</button>
+              </div>
+              {status && <div className="message">{status}</div>}
+            </div>
+          </section>
+        </main>
+      ) : (
+        <main>
+          <section className="hero">
+            <div className="tag">TUBEXA AI STUDIO</div>
+            <h1>AI Video<br /><span>Dubbing Studio</span></h1>
+            <p className="sub">اپنی ویڈیو منتخب کریں، اصل اور نئی زبان چنیں، اور اپنی ڈبنگ کی تیاری شروع کریں۔</p>
+          </section>
+
+          <section className="section">
+            <div className="panel">
+              <h2 className="section-title">① Upload Your Video</h2>
+              <div className="upload">
+                <div style={{fontSize:42}}>📁</div>
+                <h3>اپنی ویڈیو یہاں منتخب کریں</h3>
+                <p className="muted">MP4، MOV یا دوسری معاون ویڈیو فائل</p>
+                <input type="file" accept="video/*" onChange={selectFile} />
+                {videoFile && <p style={{color:"#72e0ad"}}>منتخب فائل: {videoFile.name}</p>}
+              </div>
+
+              <h2 className="section-title" style={{marginTop:30}}>② Select Languages</h2>
+              <div className="two">
+                <div className="field">
+                  <label>اصل ویڈیو کی زبان</label>
+                  <select value={sourceLanguage} onChange={e => setSourceLanguage(e.target.value)}>
+                    <option>Auto Detect</option>
+                    {languages.map(l => <option key={l}>{l}</option>)}
+                  </select>
+                </div>
+                <div className="field">
+                  <label>جس زبان میں ڈبنگ چاہیے</label>
+                  <select value={targetLanguage} onChange={e => setTargetLanguage(e.target.value)}>
+                    {languages.map(l => <option key={l}>{l}</option>)}
+                  </select>
+                </div>
+              </div>
+
+              <h2 className="section-title" style={{marginTop:25}}>③ Export Quality</h2>
+              <div className="field">
+                <label>ویڈیو کی کوالٹی</label>
+                <select value={quality} onChange={e => setQuality(e.target.value)}>
+                  {["360p", "480p", "720p", "1080p", "2K", "4K"].map(q => <option key={q}>{q}</option>)}
+                </select>
+              </div>
+
+              <h2 className="section-title" style={{marginTop:25}}>④ Output Options</h2>
+              <div className="notice">
+                منتخب زبان: <b>{targetLanguage}</b><br />
+                ایکسپورٹ کوالٹی: <b>{quality}</b><br />
+                آؤٹ پٹ فارمیٹ: <b>MP4</b>
+              </div>
+
+              <button className="primary" style={{width:"100%",marginTop:20}} onClick={() => setStatus("آپ کی سیٹنگز محفوظ ہیں۔ اصل AI ڈبنگ اور MP4 ایکسپورٹ سروس ابھی جوڑنا باقی ہے۔")}>
+                Prepare Dubbing
+              </button>
+              {status && <div className="message">{status}</div>}
+
+              <div className="notice">
+                <b>اہم:</b> یہ ابتدائی انٹرفیس ہے۔ ابھی حقیقی AI آواز، ویڈیو پروسیسنگ اور ڈاؤن لوڈ فعال نہیں ہیں۔ اپنی یا اجازت یافتہ ویڈیو استعمال کریں۔
+              </div>
+            </div>
+          </section>
+        </main>
+      )}
 
       <footer>© 2026 TUBEXA · Your Video World</footer>
     </div>
