@@ -1,3 +1,4 @@
+
 import React, { useMemo, useState } from "react";
 import ReactDOM from "react-dom/client";
 
@@ -38,24 +39,27 @@ function App() {
     const match = youtubeUrl.match(
       /(?:youtu\.be\/|youtube\.com\/(?:watch\?v=|embed\/|shorts\/))([a-zA-Z0-9_-]{11})/
     );
+
     if (match) {
       setVideoId(match[1]);
       setStatus("");
     } else {
       setVideoId("");
-      setStatus("براہِ کرم درست YouTube لنک درج کریں۔");
+      setStatus("Please enter a valid YouTube video URL.");
     }
   }
 
   function selectFile(event: React.ChangeEvent<HTMLInputElement>) {
     const file = event.target.files?.[0];
+
     if (file) {
       if (!file.type.startsWith("video/")) {
-        setStatus("براہِ کرم ویڈیو فائل منتخب کریں۔");
+        setStatus("Please select a valid video file.");
         return;
       }
+
       setVideoFile(file);
-      setStatus("ویڈیو منتخب ہو گئی ہے۔");
+      setStatus("Video selected successfully.");
     }
   }
 
@@ -91,7 +95,6 @@ function App() {
     .field label{color:#ddd;font-size:14px;font-weight:bold}
     .field input,.field select{width:100%;background:#090a0e;border:1px solid #39343d;color:white;border-radius:9px;padding:13px}
     .primary{border:0;border-radius:9px;padding:13px 20px;font-weight:bold}
-    .secondary{border:1px solid #48404b;background:#201b23;color:white;border-radius:9px;padding:12px 18px}
     .upload{border:2px dashed #51404b;border-radius:13px;padding:28px;text-align:center;background:#100f14}
     .upload input{margin-top:15px;max-width:100%}
     .two{display:grid;grid-template-columns:1fr 1fr;gap:16px}
@@ -111,12 +114,19 @@ function App() {
 
       <header className="topbar">
         <div className="logo">TUBE<span>XA</span></div>
+
         <div className="nav">
           <button className={page === "home" ? "active" : ""} onClick={() => setPage("home")}>Home</button>
           <button className={page === "dubbing" ? "active" : ""} onClick={() => setPage("dubbing")}>AI Dubbing</button>
         </div>
+
         {page === "home" && (
-          <input className="search" placeholder="Search videos..." value={search} onChange={e => setSearch(e.target.value)} />
+          <input
+            className="search"
+            placeholder="Search videos..."
+            value={search}
+            onChange={e => setSearch(e.target.value)}
+          />
         )}
       </header>
 
@@ -125,18 +135,31 @@ function App() {
           <section className="hero">
             <div className="tag">YOUR VIDEO WORLD</div>
             <h1>Discover. Watch.<br /><span>Experience.</span></h1>
-            <p className="sub">Welcome to TUBEXA — explore videos, discover new categories and enjoy your video experience in one place.</p>
-            <button className="primary" onClick={() => setPage("dubbing")}>Explore AI Dubbing →</button>
+            <p className="sub">
+              Welcome to TUBEXA — explore videos, discover new categories and enjoy your video experience in one place.
+            </p>
+            <button className="primary" onClick={() => setPage("dubbing")}>
+              Explore AI Dubbing →
+            </button>
           </section>
 
           <section className="section">
             <h2 className="section-title">Explore Categories</h2>
+
             <div className="categories">
               {["All", "Gaming", "Music", "Sports", "Kids", "Education", "Entertainment"].map(item =>
-                <button key={item} className={`chip ${category === item ? "active" : ""}`} onClick={() => setCategory(item)}>{item}</button>
+                <button
+                  key={item}
+                  className={`chip ${category === item ? "active" : ""}`}
+                  onClick={() => setCategory(item)}
+                >
+                  {item}
+                </button>
               )}
             </div>
+
             <h2 className="section-title">Discover Videos</h2>
+
             <div className="grid">
               {filteredVideos.map(v => (
                 <article className="card" key={v.title}>
@@ -148,21 +171,40 @@ function App() {
                 </article>
               ))}
             </div>
-            {filteredVideos.length === 0 && <p className="muted">کوئی ویڈیو نہیں ملی۔ دوسری سرچ کریں۔</p>}
+
+            {filteredVideos.length === 0 && (
+              <p className="muted">No videos found. Try another search.</p>
+            )}
           </section>
 
           <section className="section">
             <h2 className="section-title">Watch a YouTube Video</h2>
+
             <div className="panel">
               <div className="player">
                 {videoId ? (
-                  <iframe src={`https://www.youtube-nocookie.com/embed/${videoId}`} title="TUBEXA video player" allowFullScreen />
-                ) : <div><div style={{fontSize:45,color:"#ff3155"}}>▶</div>YouTube ویڈیو لنک درج کریں</div>}
+                  <iframe
+                    src={`https://www.youtube-nocookie.com/embed/${videoId}`}
+                    title="TUBEXA video player"
+                    allowFullScreen
+                  />
+                ) : (
+                  <div>
+                    <div style={{fontSize:45,color:"#ff3155"}}>▶</div>
+                    Enter a YouTube video URL
+                  </div>
+                )}
               </div>
+
               <div className="urlrow">
-                <input value={youtubeUrl} onChange={e => setYoutubeUrl(e.target.value)} placeholder="Paste YouTube video link..." />
+                <input
+                  value={youtubeUrl}
+                  onChange={e => setYoutubeUrl(e.target.value)}
+                  placeholder="Paste YouTube video link..."
+                />
                 <button className="primary" onClick={playVideo}>Play Video</button>
               </div>
+
               {status && <div className="message">{status}</div>}
             </div>
           </section>
@@ -172,59 +214,78 @@ function App() {
           <section className="hero">
             <div className="tag">TUBEXA AI STUDIO</div>
             <h1>AI Video<br /><span>Dubbing Studio</span></h1>
-            <p className="sub">اپنی ویڈیو منتخب کریں، اصل اور نئی زبان چنیں، اور اپنی ڈبنگ کی تیاری شروع کریں۔</p>
+            <p className="sub">
+              Upload your video, select source and target languages, and prepare your dubbing.
+            </p>
           </section>
 
           <section className="section">
             <div className="panel">
-              <h2 className="section-title">① Upload Your Video</h2>
+              <h2 className="section-title">1. Upload Your Video</h2>
+
               <div className="upload">
                 <div style={{fontSize:42}}>📁</div>
-                <h3>اپنی ویڈیو یہاں منتخب کریں</h3>
-                <p className="muted">MP4، MOV یا دوسری معاون ویڈیو فائل</p>
+                <h3>Select Your Video</h3>
+                <p className="muted">Choose an MP4, MOV, or another supported video file.</p>
                 <input type="file" accept="video/*" onChange={selectFile} />
-                {videoFile && <p style={{color:"#72e0ad"}}>منتخب فائل: {videoFile.name}</p>}
+
+                {videoFile && (
+                  <p style={{color:"#72e0ad"}}>
+                    Selected File: {videoFile.name}
+                  </p>
+                )}
               </div>
 
-              <h2 className="section-title" style={{marginTop:30}}>② Select Languages</h2>
+              <h2 className="section-title" style={{marginTop:30}}>2. Select Languages</h2>
+
               <div className="two">
                 <div className="field">
-                  <label>اصل ویڈیو کی زبان</label>
+                  <label>Original Video Language</label>
                   <select value={sourceLanguage} onChange={e => setSourceLanguage(e.target.value)}>
                     <option>Auto Detect</option>
                     {languages.map(l => <option key={l}>{l}</option>)}
                   </select>
                 </div>
+
                 <div className="field">
-                  <label>جس زبان میں ڈبنگ چاہیے</label>
+                  <label>Target Dubbing Language</label>
                   <select value={targetLanguage} onChange={e => setTargetLanguage(e.target.value)}>
                     {languages.map(l => <option key={l}>{l}</option>)}
                   </select>
                 </div>
               </div>
 
-              <h2 className="section-title" style={{marginTop:25}}>③ Export Quality</h2>
+              <h2 className="section-title" style={{marginTop:25}}>3. Export Quality</h2>
+
               <div className="field">
-                <label>ویڈیو کی کوالٹی</label>
+                <label>Video Quality</label>
                 <select value={quality} onChange={e => setQuality(e.target.value)}>
-                  {["360p", "480p", "720p", "1080p", "2K", "4K"].map(q => <option key={q}>{q}</option>)}
+                  {["360p", "480p", "720p", "1080p", "2K", "4K"].map(q =>
+                    <option key={q}>{q}</option>
+                  )}
                 </select>
               </div>
 
-              <h2 className="section-title" style={{marginTop:25}}>④ Output Options</h2>
+              <h2 className="section-title" style={{marginTop:25}}>4. Output Options</h2>
+
               <div className="notice">
-                منتخب زبان: <b>{targetLanguage}</b><br />
-                ایکسپورٹ کوالٹی: <b>{quality}</b><br />
-                آؤٹ پٹ فارمیٹ: <b>MP4</b>
+                Target Language: <b>{targetLanguage}</b><br />
+                Export Quality: <b>{quality}</b><br />
+                Output Format: <b>MP4</b>
               </div>
 
-              <button className="primary" style={{width:"100%",marginTop:20}} onClick={() => setStatus("آپ کی سیٹنگز محفوظ ہیں۔ اصل AI ڈبنگ اور MP4 ایکسپورٹ سروس ابھی جوڑنا باقی ہے۔")}>
+              <button
+                className="primary"
+                style={{width:"100%",marginTop:20}}
+                onClick={() => setStatus("Your settings are saved. The AI dubbing and MP4 export service still needs to be connected.")}
+              >
                 Prepare Dubbing
               </button>
+
               {status && <div className="message">{status}</div>}
 
               <div className="notice">
-                <b>اہم:</b> یہ ابتدائی انٹرفیس ہے۔ ابھی حقیقی AI آواز، ویڈیو پروسیسنگ اور ڈاؤن لوڈ فعال نہیں ہیں۔ اپنی یا اجازت یافتہ ویڈیو استعمال کریں۔
+                <b>Important:</b> This is the initial interface. AI voice generation, video processing, and downloads are not active yet. Only use videos you own or have permission to process.
               </div>
             </div>
           </section>
