@@ -1,3 +1,4 @@
+
 import React, { useEffect, useMemo, useState } from "react";
 import ReactDOM from "react-dom/client";
 import { supabase } from "./lib/supabase";
@@ -30,6 +31,38 @@ function App() {
   const [status, setStatus] = useState("");
   const [databaseStatus, setDatabaseStatus] = useState("Checking database connection...");
 
+  const [authMode, setAuthMode] = useState("login");
+  const [email, setEmail] = useState("");
+  const [password, setPassword] = useState("");
+  const [user, setUser] = useState<any>(null);
+  const [authMessage, setAuthMessage] = useState("");
+  const [authLoading, setAuthLoading] = useState(false);
+
+  useEffect(() => {
+    async function loadSession() {
+      const { data, error } = await supabase.auth.getSession();
+
+      if (error) {
+        console.error("Session error:", error.message);
+        return;
+      }
+
+      setUser(data.session?.user ?? null);
+    }
+
+    loadSession();
+
+    const { data: authListener } = supabase.auth.onAuthStateChange(
+      (_event, session) => {
+        setUser(session?.user ?? null);
+      }
+    );
+
+    return () => {
+      authListener.subscription.unsubscribe();
+    };
+  }, []);
+
   useEffect(() => {
     async function checkDatabase() {
       try {
@@ -38,7 +71,7 @@ function App() {
           .select("id", { count: "exact", head: true });
 
         if (error) {
-          console.error("Supabase connection error:", error.message);
+          console.error("Database error:", error.message);
           setDatabaseStatus("Database connection needs attention.");
         } else {
           setDatabaseStatus("Database connected successfully.");
@@ -51,6 +84,59 @@ function App() {
 
     checkDatabase();
   }, []);
+
+  async function handleAuth(event: React.FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    setAuthMessage("");
+    setAuthLoading(true);
+
+    try {
+      if (authMode === "signup") {
+        const { data, error } = await supabase.auth.signUp({
+          email: email.trim(),
+          password,
+        });
+
+        if (error) throw error;
+
+        if (data.session) {
+          setUser(data.session.user);
+          setAuthMessage("Account created successfully!");
+          setPage("home");
+        } else {
+          setAuthMessage("Account created! Please check your email to confirm your account.");
+        }
+      } else {
+        const { data, error } = await supabase.auth.signInWithPassword({
+          email: email.trim(),
+          password,
+        });
+
+        if (error) throw error;
+
+        setUser(data.user);
+        setAuthMessage("Login successful!");
+        setPage("home");
+      }
+    } catch (error: any) {
+      setAuthMessage(error.message || "Authentication failed. Please try again.");
+    } finally {
+      setAuthLoading(false);
+    }
+  }
+
+  async function handleLogout() {
+    const { error } = await supabase.auth.signOut();
+
+    if (error) {
+      setAuthMessage(error.message);
+      return;
+    }
+
+    setUser(null);
+    setPage("home");
+    setAuthMessage("You have logged out successfully.");
+  }
 
   const filteredVideos = useMemo(() => videos.filter(v =>
     (category === "All" || v.category === category) &&
@@ -126,8 +212,13 @@ function App() {
     .player iframe{width:100%;height:100%;border:0}
     .urlrow{display:flex;gap:10px;margin-top:15px}
     .urlrow input{flex:1;min-width:0;background:#090a0e;border:1px solid #39343d;color:white;border-radius:9px;padding:13px}
-    .message{color:#ff91a4;margin-top:12px}
+    .message{color:#ff91a4;margin-top:12px;line-height:1.6}
     .db-status{font-size:12px;color:#aaa;margin-top:12px}
+    .auth-panel{max-width:470px;margin:10px auto 50px}
+    .auth-panel h2{text-align:center;margin-top:5px}
+    .auth-switch{background:none;border:0;color:#ff5874;padding:10px}
+    .auth-actions{display:flex;justify-content:center;align-items:center;gap:5px;flex-wrap:wrap;margin-top:12px}
+    .account-email{font-size:12px;color:#aaa;max-width:150px;overflow-wrap:anywhere}
     footer{text-align:center;padding:28px;color:#777;border-top:1px solid #29252b}
     @media(max-width:700px){.topbar{flex-wrap:wrap}.search{width:100%;order:3}.two{grid-template-columns:1fr}.urlrow{flex-direction:column}.urlrow button{width:100%}.hero{padding-top:40px}}
   `;
@@ -135,18 +226,90 @@ function App() {
   return (
     <div className="app">
       <style>{styles}</style>
+
       <header className="topbar">
         <div className="logo">TUBE<span>XA</span></div>
+
         <div className="nav">
           <button className={page === "home" ? "active" : ""} onClick={() => setPage("home")}>Home</button>
           <button className={page === "dubbing" ? "active" : ""} onClick={() => setPage("dubbing")}>AI Dubbing</button>
+          {user ? (
+            <button onClick={handleLogout}>Logout</button>
+          ) : (
+            <button className={page === "auth" ? "active" : ""} onClick={() => { setPage("auth"); setAuthMessage(""); }}>Login / Sign Up</button>
+          )}
         </div>
+
+        {user && <div className="account-email">{user.email}</div>}
+
         {page === "home" && (
           <input className="search" placeholder="Search videos..." value={search} onChange={e => setSearch(e.target.value)} />
         )}
       </header>
 
-      {page === "home" ? (
+      {page === "auth" ? (
+        <main>
+          <section className="hero">
+            <div className="tag">WELCOME TO TUBEXA</div>
+            <h1>Your Account.<br /><span>Your Video World.</span></h1>
+            <p className="sub">Create your account or log in to continue.</p>
+          </section>
+
+          <section className="section">
+            <div className="panel auth-panel">
+              <h2>{authMode === "signup" ? "Create Account" : "Welcome Back"}</h2>
+
+              <form onSubmit={handleAuth}>
+                <div className="field">
+                  <label>Email Address</label>
+                  <input
+                    type="email"
+                    value={email}
+                    onChange={e => setEmail(e.target.value)}
+                    placeholder="Enter your email"
+                    required
+                    autoComplete="email"
+                  />
+                </div>
+
+                <div className="field">
+                  <label>Password</label>
+                  <input
+                    type="password"
+                    value={password}
+                    onChange={e => setPassword(e.target.value)}
+                    placeholder="Enter your password"
+                    required
+                    minLength={6}
+                    autoComplete={authMode === "signup" ? "new-password" : "current-password"}
+                  />
+                </div>
+
+                <button className="primary" type="submit" disabled={authLoading} style={{width:"100%"}}>
+                  {authLoading ? "Please wait..." : authMode === "signup" ? "Create Account" : "Login"}
+                </button>
+              </form>
+
+              {authMessage && <div className="notice">{authMessage}</div>}
+
+              <div className="auth-actions">
+                <span className="muted">
+                  {authMode === "signup" ? "Already have an account?" : "New to TUBEXA?"}
+                </span>
+                <button
+                  className="auth-switch"
+                  onClick={() => {
+                    setAuthMode(authMode === "signup" ? "login" : "signup");
+                    setAuthMessage("");
+                  }}
+                >
+                  {authMode === "signup" ? "Login" : "Sign Up"}
+                </button>
+              </div>
+            </div>
+          </section>
+        </main>
+      ) : page === "home" ? (
         <main>
           <section className="hero">
             <div className="tag">YOUR VIDEO WORLD</div>
@@ -155,6 +318,7 @@ function App() {
             <button className="primary" onClick={() => setPage("dubbing")}>Explore AI Dubbing →</button>
             <div className="db-status">{databaseStatus}</div>
           </section>
+
           <section className="section">
             <h2 className="section-title">Explore Categories</h2>
             <div className="categories">
@@ -162,22 +326,31 @@ function App() {
                 <button key={item} className={`chip ${category === item ? "active" : ""}`} onClick={() => setCategory(item)}>{item}</button>
               )}
             </div>
+
             <h2 className="section-title">Discover Videos</h2>
             <div className="grid">
               {filteredVideos.map(v => (
                 <article className="card" key={v.title}>
                   <div className="thumb" style={{background:v.color}}>{v.icon}</div>
-                  <div className="card-info"><h3>{v.title}</h3><div className="muted">{v.category} · {v.views}</div></div>
+                  <div className="card-info">
+                    <h3>{v.title}</h3>
+                    <div className="muted">{v.category} · {v.views}</div>
+                  </div>
                 </article>
               ))}
             </div>
             {filteredVideos.length === 0 && <p className="muted">No videos found. Try another search.</p>}
           </section>
+
           <section className="section">
             <h2 className="section-title">Watch a YouTube Video</h2>
             <div className="panel">
               <div className="player">
-                {videoId ? <iframe src={`https://www.youtube-nocookie.com/embed/${videoId}`} title="TUBEXA video player" allowFullScreen /> : <div><div style={{fontSize:45,color:"#ff3155"}}>▶</div>Enter a YouTube video URL</div>}
+                {videoId ? (
+                  <iframe src={`https://www.youtube-nocookie.com/embed/${videoId}`} title="TUBEXA video player" allowFullScreen />
+                ) : (
+                  <div><div style={{fontSize:45,color:"#ff3155"}}>▶</div>Enter a YouTube video URL</div>
+                )}
               </div>
               <div className="urlrow">
                 <input value={youtubeUrl} onChange={e => setYoutubeUrl(e.target.value)} placeholder="Paste YouTube video link..." />
@@ -194,6 +367,7 @@ function App() {
             <h1>AI Video<br /><span>Dubbing Studio</span></h1>
             <p className="sub">Upload your video, select source and target languages, and prepare your dubbing.</p>
           </section>
+
           <section className="section">
             <div className="panel">
               <h2 className="section-title">1. Upload Your Video</h2>
@@ -204,6 +378,7 @@ function App() {
                 <input type="file" accept="video/*" onChange={selectFile} />
                 {videoFile && <p style={{color:"#72e0ad"}}>Selected File: {videoFile.name}</p>}
               </div>
+
               <h2 className="section-title" style={{marginTop:30}}>2. Select Languages</h2>
               <div className="two">
                 <div className="field">
@@ -220,6 +395,7 @@ function App() {
                   </select>
                 </div>
               </div>
+
               <h2 className="section-title" style={{marginTop:25}}>3. Export Quality</h2>
               <div className="field">
                 <label>Video Quality</label>
@@ -227,18 +403,32 @@ function App() {
                   {["360p", "480p", "720p", "1080p", "2K", "4K"].map(q => <option key={q}>{q}</option>)}
                 </select>
               </div>
+
               <h2 className="section-title" style={{marginTop:25}}>4. Output Options</h2>
-              <div className="notice">Target Language: <b>{targetLanguage}</b><br />Export Quality: <b>{quality}</b><br />Output Format: <b>MP4</b></div>
-              <button className="primary" style={{width:"100%",marginTop:20}} onClick={() => setStatus("Your settings are saved. The AI dubbing and MP4 export service still needs to be connected.")}>Prepare Dubbing</button>
+              <div className="notice">
+                Target Language: <b>{targetLanguage}</b><br />
+                Export Quality: <b>{quality}</b><br />
+                Output Format: <b>MP4</b>
+              </div>
+
+              <button className="primary" style={{width:"100%",marginTop:20}} onClick={() => setStatus("Your settings are saved. The AI dubbing and MP4 export service still needs to be connected.")}>
+                Prepare Dubbing
+              </button>
+
               {status && <div className="message">{status}</div>}
-              <div className="notice"><b>Important:</b> This is the initial interface. AI voice generation, video processing, and downloads are not active yet. Only use videos you own or have permission to process.</div>
+
+              <div className="notice">
+                <b>Important:</b> This is the initial interface. AI voice generation, video processing, and downloads are not active yet. Only use videos you own or have permission to process.
+              </div>
             </div>
           </section>
         </main>
       )}
+
       <footer>© 2026 TUBEXA · Your Video World</footer>
     </div>
   );
 }
 
 ReactDOM.createRoot(document.getElementById("root")!).render(<App />);
+    
