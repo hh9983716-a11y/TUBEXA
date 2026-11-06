@@ -1,6 +1,6 @@
-
-import React, { useMemo, useState } from "react";
+import React, { useEffect, useMemo, useState } from "react";
 import ReactDOM from "react-dom/client";
+import { supabase } from "./lib/supabase";
 
 const videos = [
   { title: "Gaming Zone", category: "Gaming", views: "12K views", color: "#5125a8", icon: "🎮" },
@@ -28,6 +28,24 @@ function App() {
   const [targetLanguage, setTargetLanguage] = useState("Urdu");
   const [quality, setQuality] = useState("720p");
   const [status, setStatus] = useState("");
+  const [databaseStatus, setDatabaseStatus] = useState("Checking database connection...");
+
+  useEffect(() => {
+    async function checkDatabase() {
+      const { error } = await supabase
+        .from("videos")
+        .select("id", { count: "exact", head: true });
+
+      if (error) {
+        console.error("Supabase connection error:", error.message);
+        setDatabaseStatus("Database connection needs attention.");
+      } else {
+        setDatabaseStatus("Database connected successfully.");
+      }
+    }
+
+    checkDatabase();
+  }, []);
 
   const filteredVideos = useMemo(() => videos.filter(v =>
     (category === "All" || v.category === category) &&
@@ -104,6 +122,7 @@ function App() {
     .urlrow{display:flex;gap:10px;margin-top:15px}
     .urlrow input{flex:1;min-width:0;background:#090a0e;border:1px solid #39343d;color:white;border-radius:9px;padding:13px}
     .message{color:#ff91a4;margin-top:12px}
+    .db-status{font-size:12px;color:#aaa;margin-top:12px}
     footer{text-align:center;padding:28px;color:#777;border-top:1px solid #29252b}
     @media(max-width:700px){.topbar{flex-wrap:wrap}.search{width:100%;order:3}.two{grid-template-columns:1fr}.urlrow{flex-direction:column}.urlrow button{width:100%}.hero{padding-top:40px}}
   `;
@@ -141,6 +160,7 @@ function App() {
             <button className="primary" onClick={() => setPage("dubbing")}>
               Explore AI Dubbing →
             </button>
+            <div className="db-status">{databaseStatus}</div>
           </section>
 
           <section className="section">
@@ -298,4 +318,3 @@ function App() {
 }
 
 ReactDOM.createRoot(document.getElementById("root")!).render(<App />);
-
