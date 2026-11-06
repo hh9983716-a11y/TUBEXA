@@ -85,6 +85,25 @@ function App() {
     checkDatabase();
   }, []);
 
+  async function handleGoogleLogin() {
+    setAuthMessage("");
+    setAuthLoading(true);
+
+    try {
+      const { error } = await supabase.auth.signInWithOAuth({
+        provider: "google",
+        options: {
+          redirectTo: window.location.origin,
+        },
+      });
+
+      if (error) throw error;
+    } catch (error: any) {
+      setAuthMessage(error.message || "Google login failed. Please try again.");
+      setAuthLoading(false);
+    }
+  }
+
   async function handleAuth(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault();
     setAuthMessage("");
@@ -177,6 +196,7 @@ function App() {
     body{margin:0;background:#090a0e;color:#fff;font-family:Arial,sans-serif}
     button,input,select{font:inherit}
     button{cursor:pointer}
+    button:disabled{opacity:.6;cursor:not-allowed}
     .app{min-height:100vh;background:radial-gradient(ellipse at top,#24101b,#090a0e 48%)}
     .topbar{min-height:72px;padding:12px 5%;display:flex;align-items:center;justify-content:space-between;gap:15px;border-bottom:1px solid #29252b;background:#0b0b0dee;position:sticky;top:0;z-index:5}
     .logo{font-size:27px;font-weight:900;letter-spacing:2px;white-space:nowrap}
@@ -204,6 +224,10 @@ function App() {
     .field label{color:#ddd;font-size:14px;font-weight:bold}
     .field input,.field select{width:100%;background:#090a0e;border:1px solid #39343d;color:white;border-radius:9px;padding:13px}
     .primary{border:0;border-radius:9px;padding:13px 20px;font-weight:bold}
+    .google-button{width:100%;display:flex;justify-content:center;align-items:center;gap:12px;padding:13px;background:#fff;color:#222;border:1px solid #ddd;border-radius:9px;font-weight:bold;margin-top:18px}
+    .google-icon{font-size:19px;font-weight:900;color:#4285f4}
+    .divider{display:flex;align-items:center;gap:12px;color:#888;font-size:12px;margin:20px 0}
+    .divider:before,.divider:after{content:"";height:1px;background:#39343d;flex:1}
     .upload{border:2px dashed #51404b;border-radius:13px;padding:28px;text-align:center;background:#100f14}
     .upload input{margin-top:15px;max-width:100%}
     .two{display:grid;grid-template-columns:1fr 1fr;gap:16px}
@@ -258,6 +282,18 @@ function App() {
           <section className="section">
             <div className="panel auth-panel">
               <h2>{authMode === "signup" ? "Create Account" : "Welcome Back"}</h2>
+
+              <button
+                type="button"
+                className="google-button"
+                onClick={handleGoogleLogin}
+                disabled={authLoading}
+              >
+                <span className="google-icon">G</span>
+                {authLoading ? "Connecting to Google..." : "Continue with Google"}
+              </button>
+
+              <div className="divider">OR CONTINUE WITH EMAIL</div>
 
               <form onSubmit={handleAuth}>
                 <div className="field">
@@ -431,4 +467,3 @@ function App() {
 }
 
 ReactDOM.createRoot(document.getElementById("root")!).render(<App />);
-    
