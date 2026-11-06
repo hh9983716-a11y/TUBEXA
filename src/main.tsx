@@ -32,15 +32,20 @@ function App() {
 
   useEffect(() => {
     async function checkDatabase() {
-      const { error } = await supabase
-        .from("videos")
-        .select("id", { count: "exact", head: true });
+      try {
+        const { error } = await supabase
+          .from("videos")
+          .select("id", { count: "exact", head: true });
 
-      if (error) {
-        console.error("Supabase connection error:", error.message);
+        if (error) {
+          console.error("Supabase connection error:", error.message);
+          setDatabaseStatus("Database connection needs attention.");
+        } else {
+          setDatabaseStatus("Database connected successfully.");
+        }
+      } catch (error) {
+        console.error("Database check failed:", error);
         setDatabaseStatus("Database connection needs attention.");
-      } else {
-        setDatabaseStatus("Database connected successfully.");
       }
     }
 
@@ -130,22 +135,14 @@ function App() {
   return (
     <div className="app">
       <style>{styles}</style>
-
       <header className="topbar">
         <div className="logo">TUBE<span>XA</span></div>
-
         <div className="nav">
           <button className={page === "home" ? "active" : ""} onClick={() => setPage("home")}>Home</button>
           <button className={page === "dubbing" ? "active" : ""} onClick={() => setPage("dubbing")}>AI Dubbing</button>
         </div>
-
         {page === "home" && (
-          <input
-            className="search"
-            placeholder="Search videos..."
-            value={search}
-            onChange={e => setSearch(e.target.value)}
-          />
+          <input className="search" placeholder="Search videos..." value={search} onChange={e => setSearch(e.target.value)} />
         )}
       </header>
 
@@ -154,77 +151,38 @@ function App() {
           <section className="hero">
             <div className="tag">YOUR VIDEO WORLD</div>
             <h1>Discover. Watch.<br /><span>Experience.</span></h1>
-            <p className="sub">
-              Welcome to TUBEXA — explore videos, discover new categories and enjoy your video experience in one place.
-            </p>
-            <button className="primary" onClick={() => setPage("dubbing")}>
-              Explore AI Dubbing →
-            </button>
+            <p className="sub">Welcome to TUBEXA — explore videos, discover new categories and enjoy your video experience in one place.</p>
+            <button className="primary" onClick={() => setPage("dubbing")}>Explore AI Dubbing →</button>
             <div className="db-status">{databaseStatus}</div>
           </section>
-
           <section className="section">
             <h2 className="section-title">Explore Categories</h2>
-
             <div className="categories">
               {["All", "Gaming", "Music", "Sports", "Kids", "Education", "Entertainment"].map(item =>
-                <button
-                  key={item}
-                  className={`chip ${category === item ? "active" : ""}`}
-                  onClick={() => setCategory(item)}
-                >
-                  {item}
-                </button>
+                <button key={item} className={`chip ${category === item ? "active" : ""}`} onClick={() => setCategory(item)}>{item}</button>
               )}
             </div>
-
             <h2 className="section-title">Discover Videos</h2>
-
             <div className="grid">
               {filteredVideos.map(v => (
                 <article className="card" key={v.title}>
                   <div className="thumb" style={{background:v.color}}>{v.icon}</div>
-                  <div className="card-info">
-                    <h3>{v.title}</h3>
-                    <div className="muted">{v.category} · {v.views}</div>
-                  </div>
+                  <div className="card-info"><h3>{v.title}</h3><div className="muted">{v.category} · {v.views}</div></div>
                 </article>
               ))}
             </div>
-
-            {filteredVideos.length === 0 && (
-              <p className="muted">No videos found. Try another search.</p>
-            )}
+            {filteredVideos.length === 0 && <p className="muted">No videos found. Try another search.</p>}
           </section>
-
           <section className="section">
             <h2 className="section-title">Watch a YouTube Video</h2>
-
             <div className="panel">
               <div className="player">
-                {videoId ? (
-                  <iframe
-                    src={`https://www.youtube-nocookie.com/embed/${videoId}`}
-                    title="TUBEXA video player"
-                    allowFullScreen
-                  />
-                ) : (
-                  <div>
-                    <div style={{fontSize:45,color:"#ff3155"}}>▶</div>
-                    Enter a YouTube video URL
-                  </div>
-                )}
+                {videoId ? <iframe src={`https://www.youtube-nocookie.com/embed/${videoId}`} title="TUBEXA video player" allowFullScreen /> : <div><div style={{fontSize:45,color:"#ff3155"}}>▶</div>Enter a YouTube video URL</div>}
               </div>
-
               <div className="urlrow">
-                <input
-                  value={youtubeUrl}
-                  onChange={e => setYoutubeUrl(e.target.value)}
-                  placeholder="Paste YouTube video link..."
-                />
+                <input value={youtubeUrl} onChange={e => setYoutubeUrl(e.target.value)} placeholder="Paste YouTube video link..." />
                 <button className="primary" onClick={playVideo}>Play Video</button>
               </div>
-
               {status && <div className="message">{status}</div>}
             </div>
           </section>
@@ -234,30 +192,19 @@ function App() {
           <section className="hero">
             <div className="tag">TUBEXA AI STUDIO</div>
             <h1>AI Video<br /><span>Dubbing Studio</span></h1>
-            <p className="sub">
-              Upload your video, select source and target languages, and prepare your dubbing.
-            </p>
+            <p className="sub">Upload your video, select source and target languages, and prepare your dubbing.</p>
           </section>
-
           <section className="section">
             <div className="panel">
               <h2 className="section-title">1. Upload Your Video</h2>
-
               <div className="upload">
                 <div style={{fontSize:42}}>📁</div>
                 <h3>Select Your Video</h3>
                 <p className="muted">Choose an MP4, MOV, or another supported video file.</p>
                 <input type="file" accept="video/*" onChange={selectFile} />
-
-                {videoFile && (
-                  <p style={{color:"#72e0ad"}}>
-                    Selected File: {videoFile.name}
-                  </p>
-                )}
+                {videoFile && <p style={{color:"#72e0ad"}}>Selected File: {videoFile.name}</p>}
               </div>
-
               <h2 className="section-title" style={{marginTop:30}}>2. Select Languages</h2>
-
               <div className="two">
                 <div className="field">
                   <label>Original Video Language</label>
@@ -266,7 +213,6 @@ function App() {
                     {languages.map(l => <option key={l}>{l}</option>)}
                   </select>
                 </div>
-
                 <div className="field">
                   <label>Target Dubbing Language</label>
                   <select value={targetLanguage} onChange={e => setTargetLanguage(e.target.value)}>
@@ -274,44 +220,22 @@ function App() {
                   </select>
                 </div>
               </div>
-
               <h2 className="section-title" style={{marginTop:25}}>3. Export Quality</h2>
-
               <div className="field">
                 <label>Video Quality</label>
                 <select value={quality} onChange={e => setQuality(e.target.value)}>
-                  {["360p", "480p", "720p", "1080p", "2K", "4K"].map(q =>
-                    <option key={q}>{q}</option>
-                  )}
+                  {["360p", "480p", "720p", "1080p", "2K", "4K"].map(q => <option key={q}>{q}</option>)}
                 </select>
               </div>
-
               <h2 className="section-title" style={{marginTop:25}}>4. Output Options</h2>
-
-              <div className="notice">
-                Target Language: <b>{targetLanguage}</b><br />
-                Export Quality: <b>{quality}</b><br />
-                Output Format: <b>MP4</b>
-              </div>
-
-              <button
-                className="primary"
-                style={{width:"100%",marginTop:20}}
-                onClick={() => setStatus("Your settings are saved. The AI dubbing and MP4 export service still needs to be connected.")}
-              >
-                Prepare Dubbing
-              </button>
-
+              <div className="notice">Target Language: <b>{targetLanguage}</b><br />Export Quality: <b>{quality}</b><br />Output Format: <b>MP4</b></div>
+              <button className="primary" style={{width:"100%",marginTop:20}} onClick={() => setStatus("Your settings are saved. The AI dubbing and MP4 export service still needs to be connected.")}>Prepare Dubbing</button>
               {status && <div className="message">{status}</div>}
-
-              <div className="notice">
-                <b>Important:</b> This is the initial interface. AI voice generation, video processing, and downloads are not active yet. Only use videos you own or have permission to process.
-              </div>
+              <div className="notice"><b>Important:</b> This is the initial interface. AI voice generation, video processing, and downloads are not active yet. Only use videos you own or have permission to process.</div>
             </div>
           </section>
         </main>
       )}
-
       <footer>© 2026 TUBEXA · Your Video World</footer>
     </div>
   );
