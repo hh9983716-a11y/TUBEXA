@@ -38,9 +38,6 @@ function App() {
   const [youtubeUrl, setYoutubeUrl] = useState("");
   const [videoId, setVideoId] = useState("");
   const [videoFile, setVideoFile] = useState<File | null>(null);
-  const [sourceLanguage, setSourceLanguage] = useState("Auto Detect");
-  const [targetLanguage, setTargetLanguage] = useState("Urdu");
-  const [quality, setQuality] = useState("720p");
   const [status, setStatus] = useState("");
   const [uploading, setUploading] = useState(false);
 
@@ -57,6 +54,10 @@ function App() {
   const [loadingVideos, setLoadingVideos] = useState(false);
   const [playingVideo, setPlayingVideo] = useState<string | null>(null);
 
+  const [settingsVideo, setSettingsVideo] = useState<string | null>(null);
+  const [audioMode, setAudioMode] = useState("Original Audio");
+  const [dubLanguage, setDubLanguage] = useState("Urdu");
+
   useEffect(() => {
     async function loadSession() {
       const { data, error } = await supabase.auth.getSession();
@@ -70,9 +71,7 @@ function App() {
     loadSession();
 
     const { data: listener } = supabase.auth.onAuthStateChange(
-      (_event, session) => {
-        setUser(session?.user ?? null);
-      }
+      (_event, session) => setUser(session?.user ?? null)
     );
 
     return () => listener.subscription.unsubscribe();
@@ -209,7 +208,6 @@ function App() {
 
   function selectFile(event: React.ChangeEvent<HTMLInputElement>) {
     const file = event.target.files?.[0];
-
     setStatus("");
 
     if (!file) {
@@ -300,6 +298,7 @@ function App() {
   }
 
   async function deleteVideo(video: Video) {
+    if (!user) return;
     if (!window.confirm(`Delete "${video.title}"?`)) return;
 
     setStatus("Deleting video...");
@@ -325,6 +324,7 @@ function App() {
     }
 
     setPlayingVideo(null);
+    setSettingsVideo(null);
     setStatus("Video deleted successfully.");
     await loadMyVideos();
   }
@@ -391,7 +391,7 @@ function App() {
     .upload input{margin-top:15px;max-width:100%}
     .two{display:grid;grid-template-columns:1fr 1fr;gap:16px}
     .notice{padding:13px;border-radius:9px;background:#28202a;color:#ffbdca;line-height:1.6;margin-top:15px;font-size:13px;overflow-wrap:anywhere}
-    .player{width:100%;aspect-ratio:16/9;background:#050505;border-radius:10px;overflow:hidden;display:grid;place-items:center;color:#999;text-align:center}
+    .player{width:100%;aspect-ratio:16/9;background:#050505;border-radius:10px;overflow:hidden;display:grid;place-items:center;color:#999;text-align:center;position:relative}
     .player iframe,.player video{width:100%;height:100%;border:0;object-fit:contain}
     .urlrow{display:flex;gap:10px;margin-top:15px}
     .urlrow input{flex:1;min-width:0;background:#090a0e;border:1px solid #39343d;color:white;border-radius:9px;padding:13px}
@@ -406,6 +406,12 @@ function App() {
     .video-actions button{flex:1}
     .danger{background:#7d2035;color:white;border:0;border-radius:8px;padding:10px}
     .video-preview{width:100%;aspect-ratio:16/9;background:#050505;object-fit:contain}
+    .settings-wrap{position:relative;margin-top:12px}
+    .settings-button{background:#29232c;color:white;border:1px solid #51404b;border-radius:9px;padding:10px 14px}
+    .settings-panel{background:#17151d;border:1px solid #51404b;border-radius:12px;padding:15px;margin-top:10px}
+    .settings-panel select{width:100%;background:#090a0e;border:1px solid #51404b;color:white;border-radius:8px;padding:12px;margin:8px 0 14px}
+    .settings-panel label{display:block;font-size:13px;color:#ddd;margin-top:8px}
+    .settings-note{font-size:12px;color:#ffbdca;line-height:1.5;margin-top:8px}
     footer{text-align:center;padding:28px;color:#777;border-top:1px solid #29252b}
     @media(max-width:700px){.topbar{flex-wrap:wrap}.search{width:100%;order:3}.two{grid-template-columns:1fr}.urlrow{flex-direction:column}.urlrow button{width:100%}.hero{padding-top:40px}}
   `;
@@ -419,7 +425,7 @@ function App() {
 
         <div className="nav">
           <button className={page === "home" ? "active" : ""} onClick={() => setPage("home")}>Home</button>
-          <button className={page === "dubbing" ? "active" : ""} onClick={() => { setPage("dubbing"); setStatus(""); }}>AI Dubbing</button>
+          <button onClick={() => { setPage("upload"); setStatus(""); }}>Upload Video</button>
           {user ? (
             <button onClick={handleLogout}>Logout</button>
           ) : (
@@ -484,7 +490,7 @@ function App() {
             <div className="tag">YOUR VIDEO WORLD</div>
             <h1>Discover. Watch.<br /><span>Experience.</span></h1>
             <p className="sub">Welcome to TUBEXA — explore videos, discover new categories and enjoy your video experience in one place.</p>
-            <button className="primary" onClick={() => setPage("dubbing")}>Explore AI Dubbing →</button>
+            <button className="primary" onClick={() => { setPage("upload"); setStatus(""); }}>Upload Video →</button>
             <div className="db-status">{databaseStatus}</div>
           </section>
 
@@ -522,17 +528,55 @@ function App() {
                 {myVideos.map(video => (
                   <article className="card" key={video.id}>
                     {playingVideo === video.id && videoUrls[video.id] ? (
-                      <video className="video-preview" src={videoUrls[video.id]} controls playsInline />
+                      <>
+                        <video className="video-preview" src={videoUrls[video.id]} controls playsInline />
+                        <div className="settings-wrap">
+                          <button className="settings-button" onClick={() => setSettingsVideo(settingsVideo === video.id ? null : video.id)}>
+                            ⚙️ Settings
+                          </button>
+
+                          {settingsVideo === video.id && (
+                            <div className="settings-panel">
+                              <strong>Audio & Language</strong>
+
+                              <label>Audio Track</label>
+                              <select value={audioMode} onChange={e => setAudioMode(e.target.value)}>
+                                <option>Original Audio</option>
+                                <option>AI Dubbing</option>
+                              </select>
+
+                              {audioMode === "AI Dubbing" && (
+                                <>
+                                  <label>Dubbing Language</label>
+                                  <select value={dubLanguage} onChange={e => setDubLanguage(e.target.value)}>
+                                    {languages.map(language => (
+                                      <option key={language}>{language}</option>
+                                    ))}
+                                  </select>
+
+                                  <div className="settings-note">
+                                    AI dubbing engine is not connected yet. Your language preference is selected, but the video's voice will not change until processing is implemented.
+                                  </div>
+                                </>
+                              )}
+                            </div>
+                          )}
+                        </div>
+                      </>
                     ) : (
                       <div className="thumb" style={{background:"#29202c"}}>▶️</div>
                     )}
+
                     <div className="card-info">
                       <h3>{video.title}</h3>
                       <div className="muted">
                         {video.file_size ? (video.file_size / (1024 * 1024)).toFixed(1) + " MB" : ""}
                       </div>
                       <div className="video-actions">
-                        <button className="primary" disabled={!videoUrls[video.id]} onClick={() => setPlayingVideo(playingVideo === video.id ? null : video.id)}>
+                        <button className="primary" disabled={!videoUrls[video.id]} onClick={() => {
+                          setPlayingVideo(playingVideo === video.id ? null : video.id);
+                          setSettingsVideo(null);
+                        }}>
                           {playingVideo === video.id ? "Close Player" : "Play"}
                         </button>
                         <button className="danger" onClick={() => deleteVideo(video)}>Delete</button>
@@ -543,7 +587,6 @@ function App() {
               </div>
             )}
 
-            <button className="primary" style={{marginTop:20}} onClick={() => setPage("dubbing")}>Upload a Video</button>
             {status && <div className="message">{status}</div>}
           </section>
 
@@ -561,6 +604,9 @@ function App() {
                 <input value={youtubeUrl} onChange={e => setYoutubeUrl(e.target.value)} placeholder="Paste YouTube video link..." />
                 <button className="primary" onClick={playVideo}>Play Video</button>
               </div>
+              <div className="notice">
+                YouTube's embedded player controls audio tracks managed by YouTube. TUBEXA cannot add its own AI audio track to an embedded YouTube video.
+              </div>
               {status && <div className="message">{status}</div>}
             </div>
           </section>
@@ -568,14 +614,14 @@ function App() {
       ) : (
         <main>
           <section className="hero">
-            <div className="tag">TUBEXA AI STUDIO</div>
-            <h1>Video<br /><span>Upload Studio</span></h1>
+            <div className="tag">TUBEXA VIDEO STUDIO</div>
+            <h1>Upload<br /><span>Your Video</span></h1>
             <p className="sub">Upload your video securely to your TUBEXA account.</p>
           </section>
 
           <section className="section">
             <div className="panel">
-              <h2 className="section-title">1. Upload Your Video</h2>
+              <h2 className="section-title">Upload Your Video</h2>
 
               {!user && <div className="notice">Please log in before uploading videos.</div>}
 
@@ -607,39 +653,6 @@ function App() {
               </button>
 
               {status && <div className="message">{status}</div>}
-
-              <h2 className="section-title" style={{marginTop:35}}>2. Select Languages</h2>
-              <div className="two">
-                <div className="field">
-                  <label>Original Video Language</label>
-                  <select value={sourceLanguage} onChange={e => setSourceLanguage(e.target.value)}>
-                    <option>Auto Detect</option>
-                    {languages.map(l => <option key={l}>{l}</option>)}
-                  </select>
-                </div>
-                <div className="field">
-                  <label>Target Dubbing Language</label>
-                  <select value={targetLanguage} onChange={e => setTargetLanguage(e.target.value)}>
-                    {languages.map(l => <option key={l}>{l}</option>)}
-                  </select>
-                </div>
-              </div>
-
-              <h2 className="section-title" style={{marginTop:25}}>3. Export Quality</h2>
-              <div className="field">
-                <label>Video Quality</label>
-                <select value={quality} onChange={e => setQuality(e.target.value)}>
-                  {["360p", "480p", "720p", "1080p", "2K", "4K"].map(q => <option key={q}>{q}</option>)}
-                </select>
-              </div>
-
-              <div className="notice">
-                Target Language: <b>{targetLanguage}</b><br />
-                Export Quality: <b>{quality}</b><br />
-                Output Format: <b>MP4</b>
-                <br /><br />
-                <b>Note:</b> Video upload is active. AI voice generation, dubbing and video export still need a separate processing service.
-              </div>
             </div>
           </section>
         </main>
