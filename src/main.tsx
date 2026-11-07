@@ -29,6 +29,7 @@ const languages = [
 ];
 
 const MAX_FILE_SIZE = 50 * 1024 * 1024;
+const STORAGE_BUCKET = "Videos";
 
 function App() {
   const [page, setPage] = useState("home");
@@ -120,7 +121,7 @@ function App() {
       if (!video.storage_path) continue;
 
       const { data: signed, error: urlError } = await supabase.storage
-        .from("videos")
+        .from(STORAGE_BUCKET)
         .createSignedUrl(video.storage_path, 3600);
 
       if (!urlError && signed?.signedUrl) {
@@ -261,7 +262,7 @@ function App() {
 
     try {
       const { error: uploadError } = await supabase.storage
-        .from("videos")
+        .from(STORAGE_BUCKET)
         .upload(path, videoFile, {
           contentType: videoFile.type,
           upsert: false,
@@ -280,7 +281,7 @@ function App() {
         });
 
       if (insertError) {
-        await supabase.storage.from("videos").remove([path]);
+        await supabase.storage.from(STORAGE_BUCKET).remove([path]);
         throw insertError;
       }
 
@@ -304,7 +305,7 @@ function App() {
     setStatus("Deleting video...");
 
     const { error: storageError } = await supabase.storage
-      .from("videos")
+      .from(STORAGE_BUCKET)
       .remove([video.storage_path]);
 
     if (storageError) {
