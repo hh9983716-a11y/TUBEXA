@@ -3,7 +3,17 @@ import React, { useEffect, useMemo, useState } from "react";
 import ReactDOM from "react-dom/client";
 import { supabase } from "./lib/supabase";
 
-const videos = [
+type Video = {
+  id: string;
+  title: string;
+  owner_id: string;
+  storage_path: string;
+  content_type: string | null;
+  file_size: number | null;
+  created_at: string;
+};
+
+const categories = [
   { title: "Gaming Zone", category: "Gaming", views: "12K views", color: "#5125a8", icon: "🎮" },
   { title: "Music World", category: "Music", views: "8.5K views", color: "#a5224e", icon: "🎵" },
   { title: "Sports Highlights", category: "Sports", views: "25K views", color: "#087d67", icon: "⚽" },
@@ -18,6 +28,8 @@ const languages = [
   "Russian", "Bengali", "Punjabi"
 ];
 
+const MAX_FILE_SIZE = 50 * 1024 * 1024;
+
 function App() {
   const [page, setPage] = useState("home");
   const [search, setSearch] = useState("");
@@ -29,8 +41,9 @@ function App() {
   const [targetLanguage, setTargetLanguage] = useState("Urdu");
   const [quality, setQuality] = useState("720p");
   const [status, setStatus] = useState("");
-  const [databaseStatus, setDatabaseStatus] = useState("Checking database connection...");
+  const [uploading, setUploading] = useState(false);
 
+  const [databaseStatus, setDatabaseStatus] = useState("Checking database connection...");
   const [authMode, setAuthMode] = useState("login");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
@@ -38,68 +51,102 @@ function App() {
   const [authMessage, setAuthMessage] = useState("");
   const [authLoading, setAuthLoading] = useState(false);
 
+  const [myVideos, setMyVideos] = useState<Video[]>([]);
+  const [videoUrls, setVideoUrls] = useState<Record<string, string>>({});
+  const [loadingVideos, setLoadingVideos] = useState(false);
+  const [playingVideo, setPlayingVideo] = useState<string | null>(null);
+
   useEffect(() => {
     async function loadSession() {
       const { data, error } = await supabase.auth.getSession();
-
       if (error) {
-        console.error("Session error:", error.message);
+        console.error(error.message);
         return;
       }
-
       setUser(data.session?.user ?? null);
     }
 
     loadSession();
 
-    const { data: authListener } = supabase.auth.onAuthStateChange(
+    const { data: listener } = supabase.auth.onAuthStateChange(
       (_event, session) => {
         setUser(session?.user ?? null);
       }
     );
 
-    return () => {
-      authListener.subscription.unsubscribe();
-    };
+    return () => listener.subscription.unsubscribe();
   }, []);
 
   useEffect(() => {
     async function checkDatabase() {
-      try {
-        const { error } = await supabase
-          .from("videos")
-          .select("id", { count: "exact", head: true });
+      const { error } = await supabase
+        .from("videos")
+        .select("id", { count: "exact", head: true });
 
-        if (error) {
-          console.error("Database error:", error.message);
-          setDatabaseStatus("Database connection needs attention.");
-        } else {
-          setDatabaseStatus("Database connected successfully.");
-        }
-      } catch (error) {
-        console.error("Database check failed:", error);
-        setDatabaseStatus("Database connection needs attention.");
+      setDatabaseStatus(
+        error ? "Database connection needs attention." : "Database connected successfully."
+      );
+    }
+    checkDatabase();
+  }, []);
+
+  async function loadMyVideos() {
+    if (!user) {
+      setMyVideos([]);
+      setVideoUrls({});
+      return;
+    }
+
+    setLoadingVideos(true);
+
+    const { data, error } = await supabase
+      .from("videos")
+      .select("id,title,owner_id,storage_path,content_type,file_size,created_at")
+      .eq("owner_id", user.id)
+      .order("created_at", { ascending: false });
+
+    if (error) {
+      setStatus("Could not load videos: " + error.message);
+      setLoadingVideos(false);
+      return;
+    }
+
+    const list = (data ?? []) as Video[];
+    setMyVideos(list);
+
+    const urls: Record<string, string> = {};
+
+    for (const video of list) {
+      if (!video.storage_path) continue;
+
+      const { data: signed, error: urlError } = await supabase.storage
+        .from("videos")
+        .createSignedUrl(video.storage_path, 3600);
+
+      if (!urlError && signed?.signedUrl) {
+        urls[video.id] = signed.signedUrl;
       }
     }
 
-    checkDatabase();
-  }, []);
+    setVideoUrls(urls);
+    setLoadingVideos(false);
+  }
+
+  useEffect(() => {
+    loadMyVideos();
+  }, [user]);
 
   async function handleGoogleLogin() {
     setAuthMessage("");
     setAuthLoading(true);
 
-    try {
-      const { error } = await supabase.auth.signInWithOAuth({
-        provider: "google",
-        options: {
-          redirectTo: window.location.origin,
-        },
-      });
+    const { error } = await supabase.auth.signInWithOAuth({
+      provider: "google",
+      options: { redirectTo: window.location.origin },
+    });
 
-      if (error) throw error;
-    } catch (error: any) {
-      setAuthMessage(error.message || "Google login failed. Please try again.");
+    if (error) {
+      setAuthMessage(error.message);
       setAuthLoading(false);
     }
   }
@@ -120,10 +167,10 @@ function App() {
 
         if (data.session) {
           setUser(data.session.user);
-          setAuthMessage("Account created successfully!");
           setPage("home");
+          setAuthMessage("Account created successfully!");
         } else {
-          setAuthMessage("Account created! Please check your email to confirm your account.");
+          setAuthMessage("Account created! Please confirm your email.");
         }
       } else {
         const { data, error } = await supabase.auth.signInWithPassword({
@@ -134,11 +181,11 @@ function App() {
         if (error) throw error;
 
         setUser(data.user);
-        setAuthMessage("Login successful!");
         setPage("home");
+        setAuthMessage("Login successful!");
       }
     } catch (error: any) {
-      setAuthMessage(error.message || "Authentication failed. Please try again.");
+      setAuthMessage(error.message || "Authentication failed.");
     } finally {
       setAuthLoading(false);
     }
@@ -153,15 +200,140 @@ function App() {
     }
 
     setUser(null);
+    setMyVideos([]);
+    setVideoUrls({});
     setPage("home");
-    setAuthMessage("You have logged out successfully.");
+    setStatus("");
   }
 
-  const filteredVideos = useMemo(() => videos.filter(v =>
-    (category === "All" || v.category === category) &&
-    (v.title.toLowerCase().includes(search.toLowerCase()) ||
-      v.category.toLowerCase().includes(search.toLowerCase()))
-  ), [search, category]);
+  function selectFile(event: React.ChangeEvent<HTMLInputElement>) {
+    const file = event.target.files?.[0];
+
+    setStatus("");
+
+    if (!file) {
+      setVideoFile(null);
+      return;
+    }
+
+    const allowedTypes = ["video/mp4", "video/webm", "video/quicktime"];
+
+    if (!allowedTypes.includes(file.type)) {
+      setStatus("Please select an MP4, WebM or MOV video.");
+      setVideoFile(null);
+      event.target.value = "";
+      return;
+    }
+
+    if (file.size > MAX_FILE_SIZE) {
+      setStatus("Video must be 50 MB or smaller.");
+      setVideoFile(null);
+      event.target.value = "";
+      return;
+    }
+
+    setVideoFile(file);
+    setStatus("Video selected successfully.");
+  }
+
+  async function uploadVideo() {
+    if (!user) {
+      setStatus("Please log in before uploading a video.");
+      setPage("auth");
+      return;
+    }
+
+    if (!videoFile) {
+      setStatus("Please select a video first.");
+      return;
+    }
+
+    if (uploading) return;
+
+    setUploading(true);
+    setStatus("Uploading your video...");
+
+    const safeName = videoFile.name
+      .replace(/[^a-zA-Z0-9._-]/g, "_")
+      .slice(-100);
+
+    const path = `${user.id}/${crypto.randomUUID()}-${safeName}`;
+
+    try {
+      const { error: uploadError } = await supabase.storage
+        .from("videos")
+        .upload(path, videoFile, {
+          contentType: videoFile.type,
+          upsert: false,
+        });
+
+      if (uploadError) throw uploadError;
+
+      const { error: insertError } = await supabase
+        .from("videos")
+        .insert({
+          owner_id: user.id,
+          title: videoFile.name,
+          storage_path: path,
+          content_type: videoFile.type,
+          file_size: videoFile.size,
+        });
+
+      if (insertError) {
+        await supabase.storage.from("videos").remove([path]);
+        throw insertError;
+      }
+
+      setVideoFile(null);
+      const input = document.getElementById("video-upload") as HTMLInputElement | null;
+      if (input) input.value = "";
+
+      setStatus("Video uploaded successfully!");
+      await loadMyVideos();
+    } catch (error: any) {
+      console.error("Upload error:", error);
+      setStatus("Upload failed: " + (error.message || "Please try again."));
+    } finally {
+      setUploading(false);
+    }
+  }
+
+  async function deleteVideo(video: Video) {
+    if (!window.confirm(`Delete "${video.title}"?`)) return;
+
+    setStatus("Deleting video...");
+
+    const { error: storageError } = await supabase.storage
+      .from("videos")
+      .remove([video.storage_path]);
+
+    if (storageError) {
+      setStatus("Could not delete video: " + storageError.message);
+      return;
+    }
+
+    const { error: dbError } = await supabase
+      .from("videos")
+      .delete()
+      .eq("id", video.id)
+      .eq("owner_id", user.id);
+
+    if (dbError) {
+      setStatus("File deleted, but database record could not be deleted: " + dbError.message);
+      return;
+    }
+
+    setPlayingVideo(null);
+    setStatus("Video deleted successfully.");
+    await loadMyVideos();
+  }
+
+  const filteredVideos = useMemo(() =>
+    categories.filter(v =>
+      (category === "All" || v.category === category) &&
+      (v.title.toLowerCase().includes(search.toLowerCase()) ||
+        v.category.toLowerCase().includes(search.toLowerCase()))
+    ), [search, category]);
 
   function playVideo() {
     const match = youtubeUrl.match(
@@ -174,20 +346,6 @@ function App() {
     } else {
       setVideoId("");
       setStatus("Please enter a valid YouTube video URL.");
-    }
-  }
-
-  function selectFile(event: React.ChangeEvent<HTMLInputElement>) {
-    const file = event.target.files?.[0];
-
-    if (file) {
-      if (!file.type.startsWith("video/")) {
-        setStatus("Please select a valid video file.");
-        return;
-      }
-
-      setVideoFile(file);
-      setStatus("Video selected successfully.");
     }
   }
 
@@ -217,7 +375,7 @@ function App() {
     .card{background:#15151b;border:1px solid #292832;border-radius:15px;overflow:hidden}
     .thumb{height:140px;display:grid;place-items:center;font-size:45px}
     .card-info{padding:14px}
-    .card-info h3{margin:0 0 8px;font-size:17px}
+    .card-info h3{margin:0 0 8px;font-size:17px;overflow-wrap:anywhere}
     .muted{color:#999;font-size:13px}
     .panel{background:#15151b;border:1px solid #302b34;border-radius:16px;padding:22px}
     .field{display:flex;flex-direction:column;gap:9px;margin:17px 0}
@@ -231,18 +389,22 @@ function App() {
     .upload{border:2px dashed #51404b;border-radius:13px;padding:28px;text-align:center;background:#100f14}
     .upload input{margin-top:15px;max-width:100%}
     .two{display:grid;grid-template-columns:1fr 1fr;gap:16px}
-    .notice{padding:13px;border-radius:9px;background:#28202a;color:#ffbdca;line-height:1.6;margin-top:15px;font-size:13px}
+    .notice{padding:13px;border-radius:9px;background:#28202a;color:#ffbdca;line-height:1.6;margin-top:15px;font-size:13px;overflow-wrap:anywhere}
     .player{width:100%;aspect-ratio:16/9;background:#050505;border-radius:10px;overflow:hidden;display:grid;place-items:center;color:#999;text-align:center}
-    .player iframe{width:100%;height:100%;border:0}
+    .player iframe,.player video{width:100%;height:100%;border:0;object-fit:contain}
     .urlrow{display:flex;gap:10px;margin-top:15px}
     .urlrow input{flex:1;min-width:0;background:#090a0e;border:1px solid #39343d;color:white;border-radius:9px;padding:13px}
-    .message{color:#ff91a4;margin-top:12px;line-height:1.6}
+    .message{color:#ff91a4;margin-top:12px;line-height:1.6;overflow-wrap:anywhere}
     .db-status{font-size:12px;color:#aaa;margin-top:12px}
     .auth-panel{max-width:470px;margin:10px auto 50px}
     .auth-panel h2{text-align:center;margin-top:5px}
     .auth-switch{background:none;border:0;color:#ff5874;padding:10px}
     .auth-actions{display:flex;justify-content:center;align-items:center;gap:5px;flex-wrap:wrap;margin-top:12px}
     .account-email{font-size:12px;color:#aaa;max-width:150px;overflow-wrap:anywhere}
+    .video-actions{display:flex;gap:8px;flex-wrap:wrap;margin-top:12px}
+    .video-actions button{flex:1}
+    .danger{background:#7d2035;color:white;border:0;border-radius:8px;padding:10px}
+    .video-preview{width:100%;aspect-ratio:16/9;background:#050505;object-fit:contain}
     footer{text-align:center;padding:28px;color:#777;border-top:1px solid #29252b}
     @media(max-width:700px){.topbar{flex-wrap:wrap}.search{width:100%;order:3}.two{grid-template-columns:1fr}.urlrow{flex-direction:column}.urlrow button{width:100%}.hero{padding-top:40px}}
   `;
@@ -256,11 +418,11 @@ function App() {
 
         <div className="nav">
           <button className={page === "home" ? "active" : ""} onClick={() => setPage("home")}>Home</button>
-          <button className={page === "dubbing" ? "active" : ""} onClick={() => setPage("dubbing")}>AI Dubbing</button>
+          <button className={page === "dubbing" ? "active" : ""} onClick={() => { setPage("dubbing"); setStatus(""); }}>AI Dubbing</button>
           {user ? (
             <button onClick={handleLogout}>Logout</button>
           ) : (
-            <button className={page === "auth" ? "active" : ""} onClick={() => { setPage("auth"); setAuthMessage(""); }}>Login / Sign Up</button>
+            <button className={page === "auth" ? "active" : ""} onClick={() => setPage("auth")}>Login / Sign Up</button>
           )}
         </div>
 
@@ -283,12 +445,7 @@ function App() {
             <div className="panel auth-panel">
               <h2>{authMode === "signup" ? "Create Account" : "Welcome Back"}</h2>
 
-              <button
-                type="button"
-                className="google-button"
-                onClick={handleGoogleLogin}
-                disabled={authLoading}
-              >
+              <button type="button" className="google-button" onClick={handleGoogleLogin} disabled={authLoading}>
                 <span className="google-icon">G</span>
                 {authLoading ? "Connecting to Google..." : "Continue with Google"}
               </button>
@@ -298,29 +455,12 @@ function App() {
               <form onSubmit={handleAuth}>
                 <div className="field">
                   <label>Email Address</label>
-                  <input
-                    type="email"
-                    value={email}
-                    onChange={e => setEmail(e.target.value)}
-                    placeholder="Enter your email"
-                    required
-                    autoComplete="email"
-                  />
+                  <input type="email" value={email} onChange={e => setEmail(e.target.value)} placeholder="Enter your email" required autoComplete="email" />
                 </div>
-
                 <div className="field">
                   <label>Password</label>
-                  <input
-                    type="password"
-                    value={password}
-                    onChange={e => setPassword(e.target.value)}
-                    placeholder="Enter your password"
-                    required
-                    minLength={6}
-                    autoComplete={authMode === "signup" ? "new-password" : "current-password"}
-                  />
+                  <input type="password" value={password} onChange={e => setPassword(e.target.value)} placeholder="Enter your password" required minLength={6} autoComplete={authMode === "signup" ? "new-password" : "current-password"} />
                 </div>
-
                 <button className="primary" type="submit" disabled={authLoading} style={{width:"100%"}}>
                   {authLoading ? "Please wait..." : authMode === "signup" ? "Create Account" : "Login"}
                 </button>
@@ -329,16 +469,8 @@ function App() {
               {authMessage && <div className="notice">{authMessage}</div>}
 
               <div className="auth-actions">
-                <span className="muted">
-                  {authMode === "signup" ? "Already have an account?" : "New to TUBEXA?"}
-                </span>
-                <button
-                  className="auth-switch"
-                  onClick={() => {
-                    setAuthMode(authMode === "signup" ? "login" : "signup");
-                    setAuthMessage("");
-                  }}
-                >
+                <span className="muted">{authMode === "signup" ? "Already have an account?" : "New to TUBEXA?"}</span>
+                <button className="auth-switch" onClick={() => { setAuthMode(authMode === "signup" ? "login" : "signup"); setAuthMessage(""); }}>
                   {authMode === "signup" ? "Login" : "Sign Up"}
                 </button>
               </div>
@@ -375,7 +507,43 @@ function App() {
                 </article>
               ))}
             </div>
-            {filteredVideos.length === 0 && <p className="muted">No videos found. Try another search.</p>}
+
+            <h2 className="section-title" style={{marginTop:35}}>My Uploaded Videos</h2>
+
+            {!user ? (
+              <div className="notice">Log in to see your uploaded videos.</div>
+            ) : loadingVideos ? (
+              <p className="muted">Loading your videos...</p>
+            ) : myVideos.length === 0 ? (
+              <p className="muted">You have not uploaded any videos yet.</p>
+            ) : (
+              <div className="grid">
+                {myVideos.map(video => (
+                  <article className="card" key={video.id}>
+                    {playingVideo === video.id && videoUrls[video.id] ? (
+                      <video className="video-preview" src={videoUrls[video.id]} controls playsInline />
+                    ) : (
+                      <div className="thumb" style={{background:"#29202c"}}>▶️</div>
+                    )}
+                    <div className="card-info">
+                      <h3>{video.title}</h3>
+                      <div className="muted">
+                        {video.file_size ? (video.file_size / (1024 * 1024)).toFixed(1) + " MB" : ""}
+                      </div>
+                      <div className="video-actions">
+                        <button className="primary" disabled={!videoUrls[video.id]} onClick={() => setPlayingVideo(playingVideo === video.id ? null : video.id)}>
+                          {playingVideo === video.id ? "Close Player" : "Play"}
+                        </button>
+                        <button className="danger" onClick={() => deleteVideo(video)}>Delete</button>
+                      </div>
+                    </div>
+                  </article>
+                ))}
+              </div>
+            )}
+
+            <button className="primary" style={{marginTop:20}} onClick={() => setPage("dubbing")}>Upload a Video</button>
+            {status && <div className="message">{status}</div>}
           </section>
 
           <section className="section">
@@ -400,22 +568,46 @@ function App() {
         <main>
           <section className="hero">
             <div className="tag">TUBEXA AI STUDIO</div>
-            <h1>AI Video<br /><span>Dubbing Studio</span></h1>
-            <p className="sub">Upload your video, select source and target languages, and prepare your dubbing.</p>
+            <h1>Video<br /><span>Upload Studio</span></h1>
+            <p className="sub">Upload your video securely to your TUBEXA account.</p>
           </section>
 
           <section className="section">
             <div className="panel">
               <h2 className="section-title">1. Upload Your Video</h2>
+
+              {!user && <div className="notice">Please log in before uploading videos.</div>}
+
               <div className="upload">
                 <div style={{fontSize:42}}>📁</div>
                 <h3>Select Your Video</h3>
-                <p className="muted">Choose an MP4, MOV, or another supported video file.</p>
-                <input type="file" accept="video/*" onChange={selectFile} />
-                {videoFile && <p style={{color:"#72e0ad"}}>Selected File: {videoFile.name}</p>}
+                <p className="muted">MP4, WebM or MOV · Maximum 50 MB</p>
+                <input
+                  id="video-upload"
+                  type="file"
+                  accept="video/mp4,video/webm,video/quicktime"
+                  onChange={selectFile}
+                  disabled={!user || uploading}
+                />
+                {videoFile && (
+                  <p style={{color:"#72e0ad",overflowWrap:"anywhere"}}>
+                    Selected: {videoFile.name} ({(videoFile.size / (1024 * 1024)).toFixed(1)} MB)
+                  </p>
+                )}
               </div>
 
-              <h2 className="section-title" style={{marginTop:30}}>2. Select Languages</h2>
+              <button
+                className="primary"
+                style={{width:"100%",marginTop:20}}
+                onClick={uploadVideo}
+                disabled={!user || !videoFile || uploading}
+              >
+                {uploading ? "Uploading..." : "Upload Video"}
+              </button>
+
+              {status && <div className="message">{status}</div>}
+
+              <h2 className="section-title" style={{marginTop:35}}>2. Select Languages</h2>
               <div className="two">
                 <div className="field">
                   <label>Original Video Language</label>
@@ -440,21 +632,12 @@ function App() {
                 </select>
               </div>
 
-              <h2 className="section-title" style={{marginTop:25}}>4. Output Options</h2>
               <div className="notice">
                 Target Language: <b>{targetLanguage}</b><br />
                 Export Quality: <b>{quality}</b><br />
                 Output Format: <b>MP4</b>
-              </div>
-
-              <button className="primary" style={{width:"100%",marginTop:20}} onClick={() => setStatus("Your settings are saved. The AI dubbing and MP4 export service still needs to be connected.")}>
-                Prepare Dubbing
-              </button>
-
-              {status && <div className="message">{status}</div>}
-
-              <div className="notice">
-                <b>Important:</b> This is the initial interface. AI voice generation, video processing, and downloads are not active yet. Only use videos you own or have permission to process.
+                <br /><br />
+                <b>Note:</b> Video upload is active. AI voice generation, dubbing and video export still need a separate processing service.
               </div>
             </div>
           </section>
