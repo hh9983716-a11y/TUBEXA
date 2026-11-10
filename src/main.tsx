@@ -204,6 +204,7 @@ function App() {
     setVideoUrls({});
     setPage("home");
     setStatus("");
+    setSearch("");
   }
 
   function selectFile(event: React.ChangeEvent<HTMLInputElement>) {
@@ -329,12 +330,14 @@ function App() {
     await loadMyVideos();
   }
 
-  const filteredVideos = useMemo(() =>
-    categories.filter(v =>
-      (category === "All" || v.category === category) &&
-      (v.title.toLowerCase().includes(search.toLowerCase()) ||
-        v.category.toLowerCase().includes(search.toLowerCase()))
-    ), [search, category]);
+  // Search real uploaded videos instead of sample category cards.
+  const filteredVideos = useMemo(() => {
+    const query = search.trim().toLowerCase();
+
+    return myVideos.filter(video =>
+      video.title.toLowerCase().includes(query)
+    );
+  }, [myVideos, search]);
 
   function playVideo() {
     const match = youtubeUrl.match(
@@ -436,7 +439,12 @@ function App() {
         {user && <div className="account-email">{user.email}</div>}
 
         {page === "home" && (
-          <input className="search" placeholder="Search videos..." value={search} onChange={e => setSearch(e.target.value)} />
+          <input
+            className="search"
+            placeholder="Search your uploaded videos..."
+            value={search}
+            onChange={e => setSearch(e.target.value)}
+          />
         )}
       </header>
 
@@ -503,17 +511,59 @@ function App() {
             </div>
 
             <h2 className="section-title">Discover Videos</h2>
-            <div className="grid">
-              {filteredVideos.map(v => (
-                <article className="card" key={v.title}>
-                  <div className="thumb" style={{background:v.color}}>{v.icon}</div>
-                  <div className="card-info">
-                    <h3>{v.title}</h3>
-                    <div className="muted">{v.category} · {v.views}</div>
-                  </div>
-                </article>
-              ))}
-            </div>
+
+            {!user ? (
+              <div className="notice">
+                Log in to search and watch your uploaded videos.
+              </div>
+            ) : loadingVideos ? (
+              <p className="muted">Loading videos...</p>
+            ) : filteredVideos.length === 0 ? (
+              <div className="notice">
+                {search.trim()
+                  ? "No videos found. Try another video name."
+                  : "You have not uploaded any videos yet."}
+              </div>
+            ) : (
+              <div className="grid">
+                {filteredVideos.map(video => (
+                  <article className="card" key={video.id}>
+                    {playingVideo === video.id && videoUrls[video.id] ? (
+                      <video
+                        className="video-preview"
+                        src={videoUrls[video.id]}
+                        controls
+                        playsInline
+                      />
+                    ) : (
+                      <div className="thumb" style={{background:"#29202c"}}>▶️</div>
+                    )}
+
+                    <div className="card-info">
+                      <h3>{video.title}</h3>
+                      <div className="muted">
+                        {video.file_size
+                          ? (video.file_size / (1024 * 1024)).toFixed(1) + " MB"
+                          : ""}
+                      </div>
+
+                      <div className="video-actions">
+                        <button
+                          className="primary"
+                          disabled={!videoUrls[video.id]}
+                          onClick={() => {
+                            setPlayingVideo(playingVideo === video.id ? null : video.id);
+                            setSettingsVideo(null);
+                          }}
+                        >
+                          {playingVideo === video.id ? "Close Player" : "Play"}
+                        </button>
+                      </div>
+                    </div>
+                  </article>
+                ))}
+              </div>
+            )}
 
             <h2 className="section-title" style={{marginTop:35}}>My Uploaded Videos</h2>
 
