@@ -571,11 +571,15 @@ function App() {
               <div className="notice">Log in to see your uploaded videos.</div>
             ) : loadingVideos ? (
               <p className="muted">Loading your videos...</p>
-            ) : myVideos.length === 0 ? (
-              <p className="muted">You have not uploaded any videos yet.</p>
+            ) : filteredVideos.length === 0 ? (
+              <p className="muted">
+                {search.trim()
+                  ? "No videos found. Try another video name."
+                  : "You have not uploaded any videos yet."}
+              </p>
             ) : (
               <div className="grid">
-                {myVideos.map(video => (
+                {filteredVideos.map(video => (
                   <article className="card" key={video.id}>
                     {playingVideo === video.id && videoUrls[video.id] ? (
                       <>
