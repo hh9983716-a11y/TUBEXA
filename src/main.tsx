@@ -13,15 +13,6 @@ type Video = {
   created_at: string;
 };
 
-const categories = [
-  { title: "Gaming Zone", category: "Gaming", views: "12K views", color: "#5125a8", icon: "🎮" },
-  { title: "Music World", category: "Music", views: "8.5K views", color: "#a5224e", icon: "🎵" },
-  { title: "Sports Highlights", category: "Sports", views: "25K views", color: "#087d67", icon: "⚽" },
-  { title: "Kids Cartoon", category: "Kids", views: "18K views", color: "#b87916", icon: "🧸" },
-  { title: "Learn Something New", category: "Education", views: "6K views", color: "#2369a8", icon: "📚" },
-  { title: "Entertainment Show", category: "Entertainment", views: "32K views", color: "#812c9c", icon: "🎬" },
-];
-
 const languages = [
   "Urdu", "Hindi", "English", "Arabic", "Spanish", "French",
   "German", "Turkish", "Chinese", "Japanese", "Portuguese",
@@ -33,6 +24,7 @@ const STORAGE_BUCKET = "Videos";
 
 function App() {
   const [page, setPage] = useState("home");
+  const [searchInput, setSearchInput] = useState("");
   const [search, setSearch] = useState("");
   const [category, setCategory] = useState("All");
   const [youtubeUrl, setYoutubeUrl] = useState("");
@@ -205,6 +197,7 @@ function App() {
     setPage("home");
     setStatus("");
     setSearch("");
+    setSearchInput("");
   }
 
   function selectFile(event: React.ChangeEvent<HTMLInputElement>) {
@@ -330,12 +323,24 @@ function App() {
     await loadMyVideos();
   }
 
-  // Search real uploaded videos instead of sample category cards.
+  function handleSearch(event: React.FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    setSearch(searchInput.trim());
+    setPlayingVideo(null);
+  }
+
+  function clearSearch() {
+    setSearchInput("");
+    setSearch("");
+  }
+
   const filteredVideos = useMemo(() => {
     const query = search.trim().toLowerCase();
 
+    if (!query) return myVideos;
+
     return myVideos.filter(video =>
-      video.title.toLowerCase().includes(query)
+      (video.title || "").toLowerCase().includes(query)
     );
   }, [myVideos, search]);
 
@@ -363,7 +368,11 @@ function App() {
     .topbar{min-height:72px;padding:12px 5%;display:flex;align-items:center;justify-content:space-between;gap:15px;border-bottom:1px solid #29252b;background:#0b0b0dee;position:sticky;top:0;z-index:5}
     .logo{font-size:27px;font-weight:900;letter-spacing:2px;white-space:nowrap}
     .logo span{color:#ff3155}
-    .search{width:min(350px,45vw);background:#17171d;border:1px solid #35323a;border-radius:30px;padding:12px 17px;color:white;outline:none}
+    .search-form{width:min(430px,48vw);display:flex;align-items:center;gap:7px}
+    .search{width:100%;min-width:0;background:#17171d;border:1px solid #35323a;border-radius:30px;padding:12px 17px;color:white;outline:none}
+    .search:focus{border-color:#ff3155;box-shadow:0 0 0 2px #ff315533}
+    .search-button{width:45px;height:45px;flex-shrink:0;border:0;border-radius:50%;background:#ff3155;color:white;font-size:21px;display:grid;place-items:center}
+    .clear-button{height:42px;width:42px;flex-shrink:0;border:1px solid #39343d;background:#17151b;color:#ddd;border-radius:50%;font-size:19px}
     .nav{display:flex;gap:8px;flex-wrap:wrap}
     .nav button,.chip{border:1px solid #39343d;background:#17151b;color:#ddd;padding:10px 14px;border-radius:24px}
     .nav button.active,.chip.active,.primary{background:#ff3155;border-color:#ff3155;color:white}
@@ -416,7 +425,14 @@ function App() {
     .settings-panel label{display:block;font-size:13px;color:#ddd;margin-top:8px}
     .settings-note{font-size:12px;color:#ffbdca;line-height:1.5;margin-top:8px}
     footer{text-align:center;padding:28px;color:#777;border-top:1px solid #29252b}
-    @media(max-width:700px){.topbar{flex-wrap:wrap}.search{width:100%;order:3}.two{grid-template-columns:1fr}.urlrow{flex-direction:column}.urlrow button{width:100%}.hero{padding-top:40px}}
+    @media(max-width:700px){
+      .topbar{flex-wrap:wrap}
+      .search-form{width:100%;order:3}
+      .two{grid-template-columns:1fr}
+      .urlrow{flex-direction:column}
+      .urlrow button{width:100%}
+      .hero{padding-top:40px}
+    }
   `;
 
   return (
@@ -438,13 +454,31 @@ function App() {
 
         {user && <div className="account-email">{user.email}</div>}
 
-        {page === "home" && (
-          <input
-            className="search"
-            placeholder="Search your uploaded videos..."
-            value={search}
-            onChange={e => setSearch(e.target.value)}
-          />
+        {page === "home" && user && (
+          <form className="search-form" onSubmit={handleSearch}>
+            <input
+              className="search"
+              type="search"
+              placeholder="Search your uploaded videos..."
+              value={searchInput}
+              onChange={e => setSearchInput(e.target.value)}
+            />
+
+            {searchInput && (
+              <button
+                type="button"
+                className="clear-button"
+                onClick={clearSearch}
+                aria-label="Clear search"
+              >
+                ×
+              </button>
+            )}
+
+            <button type="submit" className="search-button" aria-label="Search">
+              🔍
+            </button>
+          </form>
         )}
       </header>
 
@@ -520,7 +554,7 @@ function App() {
               <p className="muted">Loading videos...</p>
             ) : filteredVideos.length === 0 ? (
               <div className="notice">
-                {search.trim()
+                {search
                   ? "No videos found. Try another video name."
                   : "You have not uploaded any videos yet."}
               </div>
@@ -529,12 +563,7 @@ function App() {
                 {filteredVideos.map(video => (
                   <article className="card" key={video.id}>
                     {playingVideo === video.id && videoUrls[video.id] ? (
-                      <video
-                        className="video-preview"
-                        src={videoUrls[video.id]}
-                        controls
-                        playsInline
-                      />
+                      <video className="video-preview" src={videoUrls[video.id]} controls playsInline />
                     ) : (
                       <div className="thumb" style={{background:"#29202c"}}>▶️</div>
                     )}
@@ -573,7 +602,7 @@ function App() {
               <p className="muted">Loading your videos...</p>
             ) : filteredVideos.length === 0 ? (
               <p className="muted">
-                {search.trim()
+                {search
                   ? "No videos found. Try another video name."
                   : "You have not uploaded any videos yet."}
               </p>
