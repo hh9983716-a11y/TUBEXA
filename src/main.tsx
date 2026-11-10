@@ -41,6 +41,7 @@ function App() {
   const [authMessage, setAuthMessage] = useState("");
   const [authLoading, setAuthLoading] = useState(false);
 
+  // This list now contains videos from all users.
   const [myVideos, setMyVideos] = useState<Video[]>([]);
   const [videoUrls, setVideoUrls] = useState<Record<string, string>>({});
   const [loadingVideos, setLoadingVideos] = useState(false);
@@ -53,10 +54,12 @@ function App() {
   useEffect(() => {
     async function loadSession() {
       const { data, error } = await supabase.auth.getSession();
+
       if (error) {
         console.error(error.message);
         return;
       }
+
       setUser(data.session?.user ?? null);
     }
 
@@ -76,25 +79,22 @@ function App() {
         .select("id", { count: "exact", head: true });
 
       setDatabaseStatus(
-        error ? "Database connection needs attention." : "Database connected successfully."
+        error
+          ? "Database connection needs attention."
+          : "Database connected successfully."
       );
     }
+
     checkDatabase();
   }, []);
 
+  // Load public videos from every user, including when logged out.
   async function loadMyVideos() {
-    if (!user) {
-      setMyVideos([]);
-      setVideoUrls({});
-      return;
-    }
-
     setLoadingVideos(true);
 
     const { data, error } = await supabase
       .from("videos")
       .select("id,title,owner_id,storage_path,content_type,file_size,created_at")
-      .eq("owner_id", user.id)
       .order("created_at", { ascending: false });
 
     if (error) {
@@ -117,6 +117,8 @@ function App() {
 
       if (!urlError && signed?.signedUrl) {
         urls[video.id] = signed.signedUrl;
+      } else if (urlError) {
+        console.error("Video URL error:", video.id, urlError.message);
       }
     }
 
@@ -192,8 +194,6 @@ function App() {
     }
 
     setUser(null);
-    setMyVideos([]);
-    setVideoUrls({});
     setPage("home");
     setStatus("");
     setSearch("");
@@ -278,6 +278,7 @@ function App() {
       }
 
       setVideoFile(null);
+
       const input = document.getElementById("video-upload") as HTMLInputElement | null;
       if (input) input.value = "";
 
@@ -293,6 +294,13 @@ function App() {
 
   async function deleteVideo(video: Video) {
     if (!user) return;
+
+    // Only allow deleting your own video.
+    if (video.owner_id !== user.id) {
+      setStatus("You can only delete your own videos.");
+      return;
+    }
+
     if (!window.confirm(`Delete "${video.title}"?`)) return;
 
     setStatus("Deleting video...");
@@ -334,6 +342,7 @@ function App() {
     setSearch("");
   }
 
+  // Search across all publicly visible videos.
   const filteredVideos = useMemo(() => {
     const query = search.trim().toLowerCase();
 
@@ -343,6 +352,13 @@ function App() {
       (video.title || "").toLowerCase().includes(query)
     );
   }, [myVideos, search]);
+
+  // Keep the personal uploads section restricted to the signed-in user.
+  const myUploadedVideos = useMemo(() => {
+    if (!user) return [];
+
+    return filteredVideos.filter(video => video.owner_id === user.id);
+  }, [filteredVideos, user]);
 
   function playVideo() {
     const match = youtubeUrl.match(
@@ -443,23 +459,37 @@ function App() {
         <div className="logo">TUBE<span>XA</span></div>
 
         <div className="nav">
-          <button className={page === "home" ? "active" : ""} onClick={() => setPage("home")}>Home</button>
-          <button onClick={() => { setPage("upload"); setStatus(""); }}>Upload Video</button>
+          <button
+            className={page === "home" ? "active" : ""}
+            onClick={() => setPage("home")}
+          >
+            Home
+          </button>
+
+          <button onClick={() => { setPage("upload"); setStatus(""); }}>
+            Upload Video
+          </button>
+
           {user ? (
             <button onClick={handleLogout}>Logout</button>
           ) : (
-            <button className={page === "auth" ? "active" : ""} onClick={() => setPage("auth")}>Login / Sign Up</button>
+            <button
+              className={page === "auth" ? "active" : ""}
+              onClick={() => setPage("auth")}
+            >
+              Login / Sign Up
+            </button>
           )}
         </div>
 
         {user && <div className="account-email">{user.email}</div>}
 
-        {page === "home" && user && (
+        {page === "home" && (
           <form className="search-form" onSubmit={handleSearch}>
             <input
               className="search"
               type="search"
-              placeholder="Search your uploaded videos..."
+              placeholder="Search all videos..."
               value={searchInput}
               onChange={e => setSearchInput(e.target.value)}
             />
@@ -494,7 +524,12 @@ function App() {
             <div className="panel auth-panel">
               <h2>{authMode === "signup" ? "Create Account" : "Welcome Back"}</h2>
 
-              <button type="button" className="google-button" onClick={handleGoogleLogin} disabled={authLoading}>
+              <button
+                type="button"
+                className="google-button"
+                onClick={handleGoogleLogin}
+                disabled={authLoading}
+              >
                 <span className="google-icon">G</span>
                 {authLoading ? "Connecting to Google..." : "Continue with Google"}
               </button>
@@ -504,13 +539,35 @@ function App() {
               <form onSubmit={handleAuth}>
                 <div className="field">
                   <label>Email Address</label>
-                  <input type="email" value={email} onChange={e => setEmail(e.target.value)} placeholder="Enter your email" required autoComplete="email" />
+                  <input
+                    type="email"
+                    value={email}
+                    onChange={e => setEmail(e.target.value)}
+                    placeholder="Enter your email"
+                    required
+                    autoComplete="email"
+                  />
                 </div>
+
                 <div className="field">
                   <label>Password</label>
-                  <input type="password" value={password} onChange={e => setPassword(e.target.value)} placeholder="Enter your password" required minLength={6} autoComplete={authMode === "signup" ? "new-password" : "current-password"} />
+                  <input
+                    type="password"
+                    value={password}
+                    onChange={e => setPassword(e.target.value)}
+                    placeholder="Enter your password"
+                    required
+                    minLength={6}
+                    autoComplete={authMode === "signup" ? "new-password" : "current-password"}
+                  />
                 </div>
-                <button className="primary" type="submit" disabled={authLoading} style={{width:"100%"}}>
+
+                <button
+                  className="primary"
+                  type="submit"
+                  disabled={authLoading}
+                  style={{ width: "100%" }}
+                >
                   {authLoading ? "Please wait..." : authMode === "signup" ? "Create Account" : "Login"}
                 </button>
               </form>
@@ -518,8 +575,17 @@ function App() {
               {authMessage && <div className="notice">{authMessage}</div>}
 
               <div className="auth-actions">
-                <span className="muted">{authMode === "signup" ? "Already have an account?" : "New to TUBEXA?"}</span>
-                <button className="auth-switch" onClick={() => { setAuthMode(authMode === "signup" ? "login" : "signup"); setAuthMessage(""); }}>
+                <span className="muted">
+                  {authMode === "signup" ? "Already have an account?" : "New to TUBEXA?"}
+                </span>
+
+                <button
+                  className="auth-switch"
+                  onClick={() => {
+                    setAuthMode(authMode === "signup" ? "login" : "signup");
+                    setAuthMessage("");
+                  }}
+                >
                   {authMode === "signup" ? "Login" : "Sign Up"}
                 </button>
               </div>
@@ -531,45 +597,70 @@ function App() {
           <section className="hero">
             <div className="tag">YOUR VIDEO WORLD</div>
             <h1>Discover. Watch.<br /><span>Experience.</span></h1>
-            <p className="sub">Welcome to TUBEXA — explore videos, discover new categories and enjoy your video experience in one place.</p>
-            <button className="primary" onClick={() => { setPage("upload"); setStatus(""); }}>Upload Video →</button>
+            <p className="sub">
+              Welcome to TUBEXA — explore videos, discover new categories and enjoy your video experience in one place.
+            </p>
+
+            <button
+              className="primary"
+              onClick={() => {
+                if (!user) {
+                  setPage("auth");
+                  return;
+                }
+                setPage("upload");
+                setStatus("");
+              }}
+            >
+              Upload Video →
+            </button>
+
             <div className="db-status">{databaseStatus}</div>
           </section>
 
           <section className="section">
             <h2 className="section-title">Explore Categories</h2>
+
             <div className="categories">
               {["All", "Gaming", "Music", "Sports", "Kids", "Education", "Entertainment"].map(item =>
-                <button key={item} className={`chip ${category === item ? "active" : ""}`} onClick={() => setCategory(item)}>{item}</button>
+                <button
+                  key={item}
+                  className={`chip ${category === item ? "active" : ""}`}
+                  onClick={() => setCategory(item)}
+                >
+                  {item}
+                </button>
               )}
             </div>
 
             <h2 className="section-title">Discover Videos</h2>
 
-            {!user ? (
-              <div className="notice">
-                Log in to search and watch your uploaded videos.
-              </div>
-            ) : loadingVideos ? (
+            {loadingVideos ? (
               <p className="muted">Loading videos...</p>
             ) : filteredVideos.length === 0 ? (
               <div className="notice">
                 {search
                   ? "No videos found. Try another video name."
-                  : "You have not uploaded any videos yet."}
+                  : "No videos available yet."}
               </div>
             ) : (
               <div className="grid">
                 {filteredVideos.map(video => (
                   <article className="card" key={video.id}>
                     {playingVideo === video.id && videoUrls[video.id] ? (
-                      <video className="video-preview" src={videoUrls[video.id]} controls playsInline />
+                      <video
+                        className="video-preview"
+                        src={videoUrls[video.id]}
+                        controls
+                        playsInline
+                      />
                     ) : (
-                      <div className="thumb" style={{background:"#29202c"}}>▶️</div>
+                      <div className="thumb" style={{ background: "#29202c" }}>▶️</div>
                     )}
 
                     <div className="card-info">
                       <h3>{video.title}</h3>
+
                       <div className="muted">
                         {video.file_size
                           ? (video.file_size / (1024 * 1024)).toFixed(1) + " MB"
@@ -594,27 +685,40 @@ function App() {
               </div>
             )}
 
-            <h2 className="section-title" style={{marginTop:35}}>My Uploaded Videos</h2>
+            <h2 className="section-title" style={{ marginTop: 35 }}>
+              My Uploaded Videos
+            </h2>
 
             {!user ? (
-              <div className="notice">Log in to see your uploaded videos.</div>
+              <div className="notice">
+                Log in to see and manage your own uploaded videos.
+              </div>
             ) : loadingVideos ? (
               <p className="muted">Loading your videos...</p>
-            ) : filteredVideos.length === 0 ? (
+            ) : myUploadedVideos.length === 0 ? (
               <p className="muted">
                 {search
-                  ? "No videos found. Try another video name."
+                  ? "No matching videos in your uploads."
                   : "You have not uploaded any videos yet."}
               </p>
             ) : (
               <div className="grid">
-                {filteredVideos.map(video => (
+                {myUploadedVideos.map(video => (
                   <article className="card" key={video.id}>
                     {playingVideo === video.id && videoUrls[video.id] ? (
                       <>
-                        <video className="video-preview" src={videoUrls[video.id]} controls playsInline />
+                        <video
+                          className="video-preview"
+                          src={videoUrls[video.id]}
+                          controls
+                          playsInline
+                        />
+
                         <div className="settings-wrap">
-                          <button className="settings-button" onClick={() => setSettingsVideo(settingsVideo === video.id ? null : video.id)}>
+                          <button
+                            className="settings-button"
+                            onClick={() => setSettingsVideo(settingsVideo === video.id ? null : video.id)}
+                          >
                             ⚙️ Settings
                           </button>
 
@@ -623,7 +727,10 @@ function App() {
                               <strong>Audio & Language</strong>
 
                               <label>Audio Track</label>
-                              <select value={audioMode} onChange={e => setAudioMode(e.target.value)}>
+                              <select
+                                value={audioMode}
+                                onChange={e => setAudioMode(e.target.value)}
+                              >
                                 <option>Original Audio</option>
                                 <option>AI Dubbing</option>
                               </select>
@@ -631,7 +738,10 @@ function App() {
                               {audioMode === "AI Dubbing" && (
                                 <>
                                   <label>Dubbing Language</label>
-                                  <select value={dubLanguage} onChange={e => setDubLanguage(e.target.value)}>
+                                  <select
+                                    value={dubLanguage}
+                                    onChange={e => setDubLanguage(e.target.value)}
+                                  >
                                     {languages.map(language => (
                                       <option key={language}>{language}</option>
                                     ))}
@@ -647,22 +757,36 @@ function App() {
                         </div>
                       </>
                     ) : (
-                      <div className="thumb" style={{background:"#29202c"}}>▶️</div>
+                      <div className="thumb" style={{ background: "#29202c" }}>▶️</div>
                     )}
 
                     <div className="card-info">
                       <h3>{video.title}</h3>
+
                       <div className="muted">
-                        {video.file_size ? (video.file_size / (1024 * 1024)).toFixed(1) + " MB" : ""}
+                        {video.file_size
+                          ? (video.file_size / (1024 * 1024)).toFixed(1) + " MB"
+                          : ""}
                       </div>
+
                       <div className="video-actions">
-                        <button className="primary" disabled={!videoUrls[video.id]} onClick={() => {
-                          setPlayingVideo(playingVideo === video.id ? null : video.id);
-                          setSettingsVideo(null);
-                        }}>
+                        <button
+                          className="primary"
+                          disabled={!videoUrls[video.id]}
+                          onClick={() => {
+                            setPlayingVideo(playingVideo === video.id ? null : video.id);
+                            setSettingsVideo(null);
+                          }}
+                        >
                           {playingVideo === video.id ? "Close Player" : "Play"}
                         </button>
-                        <button className="danger" onClick={() => deleteVideo(video)}>Delete</button>
+
+                        <button
+                          className="danger"
+                          onClick={() => deleteVideo(video)}
+                        >
+                          Delete
+                        </button>
                       </div>
                     </div>
                   </article>
@@ -675,21 +799,38 @@ function App() {
 
           <section className="section">
             <h2 className="section-title">Watch a YouTube Video</h2>
+
             <div className="panel">
               <div className="player">
                 {videoId ? (
-                  <iframe src={`https://www.youtube-nocookie.com/embed/${videoId}`} title="TUBEXA video player" allowFullScreen />
+                  <iframe
+                    src={`https://www.youtube-nocookie.com/embed/${videoId}`}
+                    title="TUBEXA video player"
+                    allowFullScreen
+                  />
                 ) : (
-                  <div><div style={{fontSize:45,color:"#ff3155"}}>▶</div>Enter a YouTube video URL</div>
+                  <div>
+                    <div style={{ fontSize: 45, color: "#ff3155" }}>▶</div>
+                    Enter a YouTube video URL
+                  </div>
                 )}
               </div>
+
               <div className="urlrow">
-                <input value={youtubeUrl} onChange={e => setYoutubeUrl(e.target.value)} placeholder="Paste YouTube video link..." />
-                <button className="primary" onClick={playVideo}>Play Video</button>
+                <input
+                  value={youtubeUrl}
+                  onChange={e => setYoutubeUrl(e.target.value)}
+                  placeholder="Paste YouTube video link..."
+                />
+                <button className="primary" onClick={playVideo}>
+                  Play Video
+                </button>
               </div>
+
               <div className="notice">
                 YouTube's embedded player controls audio tracks managed by YouTube. TUBEXA cannot add its own AI audio track to an embedded YouTube video.
               </div>
+
               {status && <div className="message">{status}</div>}
             </div>
           </section>
@@ -699,19 +840,26 @@ function App() {
           <section className="hero">
             <div className="tag">TUBEXA VIDEO STUDIO</div>
             <h1>Upload<br /><span>Your Video</span></h1>
-            <p className="sub">Upload your video securely to your TUBEXA account.</p>
+            <p className="sub">
+              Upload your video securely to your TUBEXA account.
+            </p>
           </section>
 
           <section className="section">
             <div className="panel">
               <h2 className="section-title">Upload Your Video</h2>
 
-              {!user && <div className="notice">Please log in before uploading videos.</div>}
+              {!user && (
+                <div className="notice">
+                  Please log in before uploading videos.
+                </div>
+              )}
 
               <div className="upload">
-                <div style={{fontSize:42}}>📁</div>
+                <div style={{ fontSize: 42 }}>📁</div>
                 <h3>Select Your Video</h3>
                 <p className="muted">MP4, WebM or MOV · Maximum 50 MB</p>
+
                 <input
                   id="video-upload"
                   type="file"
@@ -719,8 +867,9 @@ function App() {
                   onChange={selectFile}
                   disabled={!user || uploading}
                 />
+
                 {videoFile && (
-                  <p style={{color:"#72e0ad",overflowWrap:"anywhere"}}>
+                  <p style={{ color: "#72e0ad", overflowWrap: "anywhere" }}>
                     Selected: {videoFile.name} ({(videoFile.size / (1024 * 1024)).toFixed(1)} MB)
                   </p>
                 )}
@@ -728,7 +877,7 @@ function App() {
 
               <button
                 className="primary"
-                style={{width:"100%",marginTop:20}}
+                style={{ width: "100%", marginTop: 20 }}
                 onClick={uploadVideo}
                 disabled={!user || !videoFile || uploading}
               >
