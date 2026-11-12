@@ -1,4 +1,3 @@
-
 import React, { useEffect, useMemo, useState } from "react";
 import ReactDOM from "react-dom/client";
 import { supabase } from "./lib/supabase";
@@ -13,6 +12,15 @@ type Video = {
   created_at: string;
 };
 
+type Profile = {
+  id: string;
+  username: string | null;
+  display_name: string | null;
+  avatar_url: string | null;
+  cover_url: string | null;
+  bio: string | null;
+};
+
 const languages = [
   "Urdu", "Hindi", "English", "Arabic", "Spanish", "French",
   "German", "Turkish", "Chinese", "Japanese", "Portuguese",
@@ -21,6 +29,7 @@ const languages = [
 
 const MAX_FILE_SIZE = 50 * 1024 * 1024;
 const STORAGE_BUCKET = "Videos";
+const PROFILE_BUCKET = "profile-images";
 
 function App() {
   const [page, setPage] = useState("home");
@@ -41,57 +50,54 @@ function App() {
   const [authMessage, setAuthMessage] = useState("");
   const [authLoading, setAuthLoading] = useState(false);
 
-  // This list now contains videos from all users.
   const [myVideos, setMyVideos] = useState<Video[]>([]);
   const [videoUrls, setVideoUrls] = useState<Record<string, string>>({});
   const [loadingVideos, setLoadingVideos] = useState(false);
   const [playingVideo, setPlayingVideo] = useState<string | null>(null);
-
   const [settingsVideo, setSettingsVideo] = useState<string | null>(null);
   const [audioMode, setAudioMode] = useState("Original Audio");
   const [dubLanguage, setDubLanguage] = useState("Urdu");
 
+  const [profile, setProfile] = useState<Profile | null>(null);
+  const [profileForm, setProfileForm] = useState({
+    username: "",
+    display_name: "",
+    bio: "",
+  });
+  const [profileMessage, setProfileMessage] = useState("");
+  const [profileLoading, setProfileLoading] = useState(false);
+  const [avatarFile, setAvatarFile] = useState<File | null>(null);
+  const [coverFile, setCoverFile] = useState<File | null>(null);
+  const [viewedProfile, setViewedProfile] = useState<Profile | null>(null);
+  const [profileVideos, setProfileVideos] = useState<Video[]>([]);
+
   useEffect(() => {
     async function loadSession() {
       const { data, error } = await supabase.auth.getSession();
-
       if (error) {
         console.error(error.message);
         return;
       }
-
       setUser(data.session?.user ?? null);
     }
 
     loadSession();
-
     const { data: listener } = supabase.auth.onAuthStateChange(
       (_event, session) => setUser(session?.user ?? null)
     );
-
     return () => listener.subscription.unsubscribe();
   }, []);
 
   useEffect(() => {
     async function checkDatabase() {
-      const { error } = await supabase
-        .from("videos")
-        .select("id", { count: "exact", head: true });
-
-      setDatabaseStatus(
-        error
-          ? "Database connection needs attention."
-          : "Database connected successfully."
-      );
+      const { error } = await supabase.from("videos").select("id", { count: "exact", head: true });
+      setDatabaseStatus(error ? "Database connection needs attention." : "Database connected successfully.");
     }
-
     checkDatabase();
   }, []);
 
-  // Load public videos from every user, including when logged out.
   async function loadMyVideos() {
     setLoadingVideos(true);
-
     const { data, error } = await supabase
       .from("videos")
       .select("id,title,owner_id,storage_path,content_type,file_size,created_at")
@@ -105,40 +111,167 @@ function App() {
 
     const list = (data ?? []) as Video[];
     setMyVideos(list);
-
     const urls: Record<string, string> = {};
 
     for (const video of list) {
       if (!video.storage_path) continue;
-
       const { data: signed, error: urlError } = await supabase.storage
         .from(STORAGE_BUCKET)
         .createSignedUrl(video.storage_path, 3600);
-
-      if (!urlError && signed?.signedUrl) {
-        urls[video.id] = signed.signedUrl;
-      } else if (urlError) {
-        console.error("Video URL error:", video.id, urlError.message);
-      }
+      if (!urlError && signed?.signedUrl) urls[video.id] = signed.signedUrl;
+      else if (urlError) console.error("Video URL error:", video.id, urlError.message);
     }
 
     setVideoUrls(urls);
     setLoadingVideos(false);
   }
 
+  async function loadOwnProfile(currentUser = user) {
+    if (!currentUser) {
+      setProfile(null);
+      return;
+    }
+
+    const { data, error } = await supabase
+      .from("profiles")
+      .select("id,username,display_name,avatar_url,cover_url,bio")
+      .eq("id", currentUser.id)
+      .maybeSingle();
+
+    if (error) {
+      setProfileMessage("Could not load profile: " + error.message);
+      return;
+    }
+
+    if (!data) {
+      setProfileMessage("Profile record was not found. Please contact support.");
+      return;
+    }
+
+    const p = data as Profile;
+    setProfile(p);
+    setProfileForm({
+      username: p.username ?? "",
+      display_name: p.display_name ?? "",
+      bio: p.bio ?? "",
+    });
+  }
+
   useEffect(() => {
     loadMyVideos();
+    loadOwnProfile(user);
   }, [user]);
 
-  async function handleGoogleLogin() {
+  async function openProfile(profileId: string) {
+    setProfileMessage("");
+    const { data, error } = await supabase
+      .from("profiles")
+      .select("id,username,display_name,avatar_url,cover_url,bio")
+      .eq("id", profileId)
+      .maybeSingle();
+
+    if (error || !data) {
+      setStatus("Could not load this profile.");
+      return;
+    }
+
+    setViewedProfile(data as Profile);
+    const { data: videos, error: videosError } = await supabase
+      .from("videos")
+      .select("id,title,owner_id,storage_path,content_type,file_size,created_at")
+      .eq("owner_id", profileId)
+      .order("created_at", { ascending: false });
+
+    if (videosError) {
+      setProfileVideos([]);
+      setStatus("Profile loaded, but videos could not be loaded.");
+    } else {
+      setProfileVideos((videos ?? []) as Video[]);
+    }
+    setPage("channel");
+  }
+
+  async function uploadProfileImage(file: File, kind: "avatar" | "cover") {
+    if (!user) throw new Error("Please log in first.");
+    if (!file.type.startsWith("image/")) throw new Error("Please select an image file.");
+    if (file.size > 5 * 1024 * 1024) throw new Error("Profile images must be 5 MB or smaller.");
+
+    const extension = file.name.split(".").pop()?.replace(/[^a-zA-Z0-9]/g, "") || "jpg";
+    const path = `${user.id}/${kind}-${crypto.randomUUID()}.${extension}`;
+
+    const { error: uploadError } = await supabase.storage
+      .from(PROFILE_BUCKET)
+      .upload(path, file, { contentType: file.type, upsert: true });
+
+    if (uploadError) throw uploadError;
+
+    const { data } = supabase.storage.from(PROFILE_BUCKET).getPublicUrl(path);
+    return data.publicUrl;
+  }
+
+  async function saveProfile(event: React.FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    if (!user || profileLoading) return;
+
+    const username = profileForm.username.trim().toLowerCase();
+    const displayName = profileForm.display_name.trim();
+    const bio = profileForm.bio.trim();
+
+    if (!/^[a-z0-9_]{3,20}$/.test(username)) {
+      setProfileMessage("Username must be 3–20 characters and use only English letters, numbers or underscore.");
+      return;
+    }
+    if (!displayName) {
+      setProfileMessage("Please enter your display name.");
+      return;
+    }
+
+    setProfileLoading(true);
+    setProfileMessage("Saving profile...");
+
+    try {
+      let avatarUrl = profile?.avatar_url ?? null;
+      let coverUrl = profile?.cover_url ?? null;
+
+      if (avatarFile) avatarUrl = await uploadProfileImage(avatarFile, "avatar");
+      if (coverFile) coverUrl = await uploadProfileImage(coverFile, "cover");
+
+      const { data, error } = await supabase
+        .from("profiles")
+        .update({
+          username,
+          display_name: displayName,
+          bio,
+          avatar_url: avatarUrl,
+          cover_url: coverUrl,
+        })
+        .eq("id", user.id)
+        .select("id,username,display_name,avatar_url,cover_url,bio")
+        .single();
+
+      if (error) throw error;
+
+      setProfile(data as Profile);
+      setAvatarFile(null);
+      setCoverFile(null);
+      setProfileMessage("Profile saved successfully!");
+    } catch (error: any) {
+      const message = error?.message || "Could not save profile.";
+      setProfileMessage(
+        message.toLowerCase().includes("duplicate") || message.toLowerCase().includes("unique")
+          ? "This username is already taken. Please choose another one."
+          : message
+      );
+    } finally {
+      setProfileLoading(false);
+    }
+    }  async function handleGoogleLogin() {
     setAuthMessage("");
     setAuthLoading(true);
-
     const { error } = await supabase.auth.signInWithOAuth({
       provider: "google",
       options: { redirectTo: window.location.origin },
     });
-
     if (error) {
       setAuthMessage(error.message);
       setAuthLoading(false);
@@ -152,13 +285,8 @@ function App() {
 
     try {
       if (authMode === "signup") {
-        const { data, error } = await supabase.auth.signUp({
-          email: email.trim(),
-          password,
-        });
-
+        const { data, error } = await supabase.auth.signUp({ email: email.trim(), password });
         if (error) throw error;
-
         if (data.session) {
           setUser(data.session.user);
           setPage("home");
@@ -167,13 +295,8 @@ function App() {
           setAuthMessage("Account created! Please confirm your email.");
         }
       } else {
-        const { data, error } = await supabase.auth.signInWithPassword({
-          email: email.trim(),
-          password,
-        });
-
+        const { data, error } = await supabase.auth.signInWithPassword({ email: email.trim(), password });
         if (error) throw error;
-
         setUser(data.user);
         setPage("home");
         setAuthMessage("Login successful!");
@@ -187,13 +310,13 @@ function App() {
 
   async function handleLogout() {
     const { error } = await supabase.auth.signOut();
-
     if (error) {
       setAuthMessage(error.message);
       return;
     }
-
     setUser(null);
+    setProfile(null);
+    setViewedProfile(null);
     setPage("home");
     setStatus("");
     setSearch("");
@@ -203,28 +326,23 @@ function App() {
   function selectFile(event: React.ChangeEvent<HTMLInputElement>) {
     const file = event.target.files?.[0];
     setStatus("");
-
     if (!file) {
       setVideoFile(null);
       return;
     }
-
     const allowedTypes = ["video/mp4", "video/webm", "video/quicktime"];
-
     if (!allowedTypes.includes(file.type)) {
       setStatus("Please select an MP4, WebM or MOV video.");
       setVideoFile(null);
       event.target.value = "";
       return;
     }
-
     if (file.size > MAX_FILE_SIZE) {
       setStatus("Video must be 50 MB or smaller.");
       setVideoFile(null);
       event.target.value = "";
       return;
     }
-
     setVideoFile(file);
     setStatus("Video selected successfully.");
   }
@@ -235,42 +353,30 @@ function App() {
       setPage("auth");
       return;
     }
-
     if (!videoFile) {
       setStatus("Please select a video first.");
       return;
     }
-
     if (uploading) return;
 
     setUploading(true);
     setStatus("Uploading your video...");
-
-    const safeName = videoFile.name
-      .replace(/[^a-zA-Z0-9._-]/g, "_")
-      .slice(-100);
-
+    const safeName = videoFile.name.replace(/[^a-zA-Z0-9._-]/g, "_").slice(-100);
     const path = `${user.id}/${crypto.randomUUID()}-${safeName}`;
 
     try {
       const { error: uploadError } = await supabase.storage
         .from(STORAGE_BUCKET)
-        .upload(path, videoFile, {
-          contentType: videoFile.type,
-          upsert: false,
-        });
-
+        .upload(path, videoFile, { contentType: videoFile.type, upsert: false });
       if (uploadError) throw uploadError;
 
-      const { error: insertError } = await supabase
-        .from("videos")
-        .insert({
-          owner_id: user.id,
-          title: videoFile.name,
-          storage_path: path,
-          content_type: videoFile.type,
-          file_size: videoFile.size,
-        });
+      const { error: insertError } = await supabase.from("videos").insert({
+        owner_id: user.id,
+        title: videoFile.name,
+        storage_path: path,
+        content_type: videoFile.type,
+        file_size: videoFile.size,
+      });
 
       if (insertError) {
         await supabase.storage.from(STORAGE_BUCKET).remove([path]);
@@ -278,10 +384,8 @@ function App() {
       }
 
       setVideoFile(null);
-
       const input = document.getElementById("video-upload") as HTMLInputElement | null;
       if (input) input.value = "";
-
       setStatus("Video uploaded successfully!");
       await loadMyVideos();
     } catch (error: any) {
@@ -294,37 +398,23 @@ function App() {
 
   async function deleteVideo(video: Video) {
     if (!user) return;
-
-    // Only allow deleting your own video.
     if (video.owner_id !== user.id) {
       setStatus("You can only delete your own videos.");
       return;
     }
-
     if (!window.confirm(`Delete "${video.title}"?`)) return;
 
     setStatus("Deleting video...");
-
-    const { error: storageError } = await supabase.storage
-      .from(STORAGE_BUCKET)
-      .remove([video.storage_path]);
-
+    const { error: storageError } = await supabase.storage.from(STORAGE_BUCKET).remove([video.storage_path]);
     if (storageError) {
       setStatus("Could not delete video: " + storageError.message);
       return;
     }
-
-    const { error: dbError } = await supabase
-      .from("videos")
-      .delete()
-      .eq("id", video.id)
-      .eq("owner_id", user.id);
-
+    const { error: dbError } = await supabase.from("videos").delete().eq("id", video.id).eq("owner_id", user.id);
     if (dbError) {
       setStatus("File deleted, but database record could not be deleted: " + dbError.message);
       return;
     }
-
     setPlayingVideo(null);
     setSettingsVideo(null);
     setStatus("Video deleted successfully.");
@@ -342,29 +432,19 @@ function App() {
     setSearch("");
   }
 
-  // Search across all publicly visible videos.
   const filteredVideos = useMemo(() => {
     const query = search.trim().toLowerCase();
-
     if (!query) return myVideos;
-
-    return myVideos.filter(video =>
-      (video.title || "").toLowerCase().includes(query)
-    );
+    return myVideos.filter(video => (video.title || "").toLowerCase().includes(query));
   }, [myVideos, search]);
 
-  // Keep the personal uploads section restricted to the signed-in user.
   const myUploadedVideos = useMemo(() => {
     if (!user) return [];
-
     return filteredVideos.filter(video => video.owner_id === user.id);
   }, [filteredVideos, user]);
 
   function playVideo() {
-    const match = youtubeUrl.match(
-      /(?:youtu\.be\/|youtube\.com\/(?:watch\?v=|embed\/|shorts\/))([a-zA-Z0-9_-]{11})/
-    );
-
+    const match = youtubeUrl.match(/(?:youtu\.be\/|youtube\.com\/(?:watch\?v=|embed\/|shorts\/))([a-zA-Z0-9_-]{11})/);
     if (match) {
       setVideoId(match[1]);
       setStatus("");
@@ -377,17 +457,17 @@ function App() {
   const styles = `
     *{box-sizing:border-box}
     body{margin:0;background:#090a0e;color:#fff;font-family:Arial,sans-serif}
-    button,input,select{font:inherit}
+    button,input,select,textarea{font:inherit}
     button{cursor:pointer}
     button:disabled{opacity:.6;cursor:not-allowed}
     .app{min-height:100vh;background:radial-gradient(ellipse at top,#24101b,#090a0e 48%)}
-    .topbar{min-height:72px;padding:12px 5%;display:flex;align-items:center;justify-content:space-between;gap:15px;border-bottom:1px solid #29252b;background:#0b0b0dee;position:sticky;top:0;z-index:5}
+    .topbar{min-height:72px;padding:12px 5%;display:flex;align-items:center;justify-content:space-between;gap:15px;border-bottom:1px solid #29252b;background:#0b0b0dee;position:sticky;top:0;z-index:5;flex-wrap:wrap}
     .logo{font-size:27px;font-weight:900;letter-spacing:2px;white-space:nowrap}
     .logo span{color:#ff3155}
     .search-form{width:min(430px,48vw);display:flex;align-items:center;gap:7px}
     .search{width:100%;min-width:0;background:#17171d;border:1px solid #35323a;border-radius:30px;padding:12px 17px;color:white;outline:none}
     .search:focus{border-color:#ff3155;box-shadow:0 0 0 2px #ff315533}
-    .search-button{width:45px;height:45px;flex-shrink:0;border:0;border-radius:50%;background:#ff3155;color:white;font-size:21px;display:grid;place-items:center}
+    .search-button{width:45px;height:45px;flex-shrink:0;border:0;border-radius:50%;background:#ff3155;color:white;font-size:21px}
     .clear-button{height:42px;width:42px;flex-shrink:0;border:1px solid #39343d;background:#17151b;color:#ddd;border-radius:50%;font-size:19px}
     .nav{display:flex;gap:8px;flex-wrap:wrap}
     .nav button,.chip{border:1px solid #39343d;background:#17151b;color:#ddd;padding:10px 14px;border-radius:24px}
@@ -409,7 +489,8 @@ function App() {
     .panel{background:#15151b;border:1px solid #302b34;border-radius:16px;padding:22px}
     .field{display:flex;flex-direction:column;gap:9px;margin:17px 0}
     .field label{color:#ddd;font-size:14px;font-weight:bold}
-    .field input,.field select{width:100%;background:#090a0e;border:1px solid #39343d;color:white;border-radius:9px;padding:13px}
+    .field input,.field select,.field textarea{width:100%;background:#090a0e;border:1px solid #39343d;color:white;border-radius:9px;padding:13px}
+    .field textarea{min-height:100px;resize:vertical}
     .primary{border:0;border-radius:9px;padding:13px 20px;font-weight:bold}
     .google-button{width:100%;display:flex;justify-content:center;align-items:center;gap:12px;padding:13px;background:#fff;color:#222;border:1px solid #ddd;border-radius:9px;font-weight:bold;margin-top:18px}
     .google-icon{font-size:19px;font-weight:900;color:#4285f4}
@@ -440,456 +521,175 @@ function App() {
     .settings-panel select{width:100%;background:#090a0e;border:1px solid #51404b;color:white;border-radius:8px;padding:12px;margin:8px 0 14px}
     .settings-panel label{display:block;font-size:13px;color:#ddd;margin-top:8px}
     .settings-note{font-size:12px;color:#ffbdca;line-height:1.5;margin-top:8px}
+    .profile-cover{height:210px;border-radius:14px;background:#28202c center/cover no-repeat;position:relative;overflow:hidden}
+    .profile-head{display:flex;align-items:center;gap:18px;margin-top:-48px;padding:0 22px;position:relative;flex-wrap:wrap}
+    .avatar{width:112px;height:112px;border-radius:50%;border:5px solid #15151b;background:#39313d;object-fit:cover;display:grid;place-items:center;font-size:38px}
+    .profile-name{padding-top:48px}
+    .profile-name h2{margin:0 0 7px}
+    .profile-link{background:#28202c;color:#ffbdca;border:1px solid #51404b;border-radius:8px;padding:9px 12px}
     footer{text-align:center;padding:28px;color:#777;border-top:1px solid #29252b}
-    @media(max-width:700px){
-      .topbar{flex-wrap:wrap}
-      .search-form{width:100%;order:3}
-      .two{grid-template-columns:1fr}
-      .urlrow{flex-direction:column}
-      .urlrow button{width:100%}
-      .hero{padding-top:40px}
-    }
+    @media(max-width:700px){.search-form{width:100%;order:3}.two{grid-template-columns:1fr}.urlrow{flex-direction:column}.urlrow button{width:100%}.hero{padding-top:40px}.topbar{justify-content:flex-start}.profile-cover{height:150px}}
   `;
 
-  return (
+  const displayName = (p: Profile | null) => p?.display_name || p?.username || "TUBEXA User";  return (
     <div className="app">
       <style>{styles}</style>
 
       <header className="topbar">
-        <div className="logo">TUBE<span>XA</span></div>
-
+        <div className="logo" onClick={() => setPage("home")} style={{ cursor: "pointer" }}>TUBE<span>XA</span></div>
         <div className="nav">
-          <button
-            className={page === "home" ? "active" : ""}
-            onClick={() => setPage("home")}
-          >
-            Home
-          </button>
-
-          <button onClick={() => { setPage("upload"); setStatus(""); }}>
-            Upload Video
-          </button>
-
-          {user ? (
-            <button onClick={handleLogout}>Logout</button>
-          ) : (
-            <button
-              className={page === "auth" ? "active" : ""}
-              onClick={() => setPage("auth")}
-            >
-              Login / Sign Up
-            </button>
-          )}
+          <button className={page === "home" ? "active" : ""} onClick={() => setPage("home")}>Home</button>
+          <button onClick={() => { setPage("upload"); setStatus(""); }}>Upload Video</button>
+          {user && <button className={page === "profile" ? "active" : ""} onClick={() => { loadOwnProfile(); setPage("profile"); }}>My Profile</button>}
+          {user ? <button onClick={handleLogout}>Logout</button> : <button className={page === "auth" ? "active" : ""} onClick={() => setPage("auth")}>Login / Sign Up</button>}
         </div>
-
-        {user && <div className="account-email">{user.email}</div>}
-
+        {user && <div className="account-email">{profile?.display_name || user.email}</div>}
         {page === "home" && (
           <form className="search-form" onSubmit={handleSearch}>
-            <input
-              className="search"
-              type="search"
-              placeholder="Search all videos..."
-              value={searchInput}
-              onChange={e => setSearchInput(e.target.value)}
-            />
-
-            {searchInput && (
-              <button
-                type="button"
-                className="clear-button"
-                onClick={clearSearch}
-                aria-label="Clear search"
-              >
-                ×
-              </button>
-            )}
-
-            <button type="submit" className="search-button" aria-label="Search">
-              🔍
-            </button>
+            <input className="search" type="search" placeholder="Search all videos..." value={searchInput} onChange={e => setSearchInput(e.target.value)} />
+            {searchInput && <button type="button" className="clear-button" onClick={clearSearch} aria-label="Clear search">×</button>}
+            <button type="submit" className="search-button" aria-label="Search">🔍</button>
           </form>
         )}
       </header>
 
       {page === "auth" ? (
         <main>
-          <section className="hero">
-            <div className="tag">WELCOME TO TUBEXA</div>
-            <h1>Your Account.<br /><span>Your Video World.</span></h1>
-            <p className="sub">Create your account or log in to continue.</p>
-          </section>
-
+          <section className="hero"><div className="tag">WELCOME TO TUBEXA</div><h1>Your Account.<br /><span>Your Video World.</span></h1><p className="sub">Create your account or log in to continue.</p></section>
           <section className="section">
             <div className="panel auth-panel">
               <h2>{authMode === "signup" ? "Create Account" : "Welcome Back"}</h2>
-
-              <button
-                type="button"
-                className="google-button"
-                onClick={handleGoogleLogin}
-                disabled={authLoading}
-              >
-                <span className="google-icon">G</span>
-                {authLoading ? "Connecting to Google..." : "Continue with Google"}
-              </button>
-
+              <button type="button" className="google-button" onClick={handleGoogleLogin} disabled={authLoading}><span className="google-icon">G</span>{authLoading ? "Connecting to Google..." : "Continue with Google"}</button>
               <div className="divider">OR CONTINUE WITH EMAIL</div>
-
               <form onSubmit={handleAuth}>
-                <div className="field">
-                  <label>Email Address</label>
-                  <input
-                    type="email"
-                    value={email}
-                    onChange={e => setEmail(e.target.value)}
-                    placeholder="Enter your email"
-                    required
-                    autoComplete="email"
-                  />
-                </div>
-
-                <div className="field">
-                  <label>Password</label>
-                  <input
-                    type="password"
-                    value={password}
-                    onChange={e => setPassword(e.target.value)}
-                    placeholder="Enter your password"
-                    required
-                    minLength={6}
-                    autoComplete={authMode === "signup" ? "new-password" : "current-password"}
-                  />
-                </div>
-
-                <button
-                  className="primary"
-                  type="submit"
-                  disabled={authLoading}
-                  style={{ width: "100%" }}
-                >
-                  {authLoading ? "Please wait..." : authMode === "signup" ? "Create Account" : "Login"}
-                </button>
+                <div className="field"><label>Email Address</label><input type="email" value={email} onChange={e => setEmail(e.target.value)} placeholder="Enter your email" required autoComplete="email" /></div>
+                <div className="field"><label>Password</label><input type="password" value={password} onChange={e => setPassword(e.target.value)} placeholder="Enter your password" required minLength={6} autoComplete={authMode === "signup" ? "new-password" : "current-password"} /></div>
+                <button className="primary" type="submit" disabled={authLoading} style={{ width: "100%" }}>{authLoading ? "Please wait..." : authMode === "signup" ? "Create Account" : "Login"}</button>
               </form>
-
               {authMessage && <div className="notice">{authMessage}</div>}
-
-              <div className="auth-actions">
-                <span className="muted">
-                  {authMode === "signup" ? "Already have an account?" : "New to TUBEXA?"}
-                </span>
-
-                <button
-                  className="auth-switch"
-                  onClick={() => {
-                    setAuthMode(authMode === "signup" ? "login" : "signup");
-                    setAuthMessage("");
-                  }}
-                >
-                  {authMode === "signup" ? "Login" : "Sign Up"}
-                </button>
-              </div>
+              <div className="auth-actions"><span className="muted">{authMode === "signup" ? "Already have an account?" : "New to TUBEXA?"}</span><button className="auth-switch" onClick={() => { setAuthMode(authMode === "signup" ? "login" : "signup"); setAuthMessage(""); }}>{authMode === "signup" ? "Login" : "Sign Up"}</button></div>
             </div>
+          </section>
+        </main>
+      ) : page === "profile" ? (
+        <main>
+          <section className="hero"><div className="tag">YOUR TUBEXA ACCOUNT</div><h1>My <span>Profile</span></h1><p className="sub">اپنا نام، Username، تصویر، کور فوٹو اور تعارف تبدیل کریں۔</p></section>
+          <section className="section">
+            {!user ? <div className="notice">پروفائل تبدیل کرنے کے لیے پہلے لاگ اِن کریں۔</div> : (
+              <>
+                <div className="panel">
+                  <div className="profile-cover" style={{ backgroundImage: profile?.cover_url ? `url("${profile.cover_url}")` : undefined }} />
+                  <div className="profile-head">
+                    {profile?.avatar_url ? <img className="avatar" src={profile.avatar_url} alt="Profile" /> : <div className="avatar">👤</div>}
+                    <div className="profile-name"><h2>{displayName(profile)}</h2><div className="muted">@{profile?.username || "username-not-set"}</div></div>
+                  </div>
+                </div>
+                <form className="panel" style={{ marginTop: 20 }} onSubmit={saveProfile}>
+                  <h2 className="section-title">Edit Your Profile</h2>
+                  <div className="two">
+                    <div className="field"><label>Display Name</label><input value={profileForm.display_name} onChange={e => setProfileForm({ ...profileForm, display_name: e.target.value })} maxLength={50} required placeholder="Your name" /></div>
+                    <div className="field"><label>Unique Username</label><input value={profileForm.username} onChange={e => setProfileForm({ ...profileForm, username: e.target.value })} maxLength={20} required placeholder="your_username" /><span className="muted">3–20 characters: a-z, 0-9, underscore</span></div>
+                  </div>
+                  <div className="field"><label>Bio</label><textarea value={profileForm.bio} onChange={e => setProfileForm({ ...profileForm, bio: e.target.value })} maxLength={300} placeholder="Tell viewers a little about yourself..." /></div>
+                  <div className="two">
+                    <div className="field"><label>Profile Picture (max 5 MB)</label><input type="file" accept="image/*" onChange={e => setAvatarFile(e.target.files?.[0] ?? null)} /></div>
+                    <div className="field"><label>Cover Photo (max 5 MB)</label><input type="file" accept="image/*" onChange={e => setCoverFile(e.target.files?.[0] ?? null)} /></div>
+                  </div>
+                  <button className="primary" type="submit" disabled={profileLoading}>{profileLoading ? "Saving..." : "Save Profile"}</button>
+                  {profileMessage && <div className="notice">{profileMessage}</div>}
+                </form>
+              </>
+            )}
+          </section>
+        </main>
+      ) : page === "channel" && viewedProfile ? (
+        <main>
+          <section className="section" style={{ paddingTop: 35 }}>
+            <div className="profile-cover" style={{ backgroundImage: viewedProfile.cover_url ? `url("${viewedProfile.cover_url}")` : undefined }} />
+            <div className="profile-head">
+              {viewedProfile.avatar_url ? <img className="avatar" src={viewedProfile.avatar_url} alt="Profile" /> : <div className="avatar">👤</div>}
+              <div className="profile-name"><h2>{displayName(viewedProfile)}</h2><div className="muted">@{viewedProfile.username || "username-not-set"}</div></div>
+            </div>
+            {viewedProfile.bio && <p className="sub" style={{ marginTop: 20 }}>{viewedProfile.bio}</p>}
+            <h2 className="section-title" style={{ marginTop: 35 }}>Channel Videos</h2>
+            {profileVideos.length === 0 ? <div className="notice">اس چینل پر ابھی کوئی ویڈیو موجود نہیں۔</div> : (
+              <div className="grid">
+                {profileVideos.map(video => (
+                  <article className="card" key={video.id}>
+                    {playingVideo === video.id && videoUrls[video.id] ? <video className="video-preview" src={videoUrls[video.id]} controls playsInline /> : <div className="thumb">▶️</div>}
+                    <div className="card-info"><h3>{video.title}</h3><button className="primary" disabled={!videoUrls[video.id]} onClick={() => setPlayingVideo(playingVideo === video.id ? null : video.id)}>{playingVideo === video.id ? "Close Player" : "Play"}</button></div>
+                  </article>
+                ))}
+              </div>
+            )}
+            <button className="profile-link" style={{ marginTop: 20 }} onClick={() => setPage("home")}>← Back to Home</button>
           </section>
         </main>
       ) : page === "home" ? (
         <main>
           <section className="hero">
-            <div className="tag">YOUR VIDEO WORLD</div>
-            <h1>Discover. Watch.<br /><span>Experience.</span></h1>
-            <p className="sub">
-              Welcome to TUBEXA — explore videos, discover new categories and enjoy your video experience in one place.
-            </p>
-
-            <button
-              className="primary"
-              onClick={() => {
-                if (!user) {
-                  setPage("auth");
-                  return;
-                }
-                setPage("upload");
-                setStatus("");
-              }}
-            >
-              Upload Video →
-            </button>
-
+            <div className="tag">YOUR VIDEO WORLD</div><h1>Discover. Watch.<br /><span>Experience.</span></h1>
+            <p className="sub">Welcome to TUBEXA — explore videos, discover new categories and enjoy your video experience in one place.</p>
+            <button className="primary" onClick={() => { if (!user) { setPage("auth"); return; } setPage("upload"); setStatus(""); }}>Upload Video →</button>
             <div className="db-status">{databaseStatus}</div>
           </section>
-
           <section className="section">
             <h2 className="section-title">Explore Categories</h2>
-
-            <div className="categories">
-              {["All", "Gaming", "Music", "Sports", "Kids", "Education", "Entertainment"].map(item =>
-                <button
-                  key={item}
-                  className={`chip ${category === item ? "active" : ""}`}
-                  onClick={() => setCategory(item)}
-                >
-                  {item}
-                </button>
-              )}
-            </div>
-
+            <div className="categories">{["All", "Gaming", "Music", "Sports", "Kids", "Education", "Entertainment"].map(item => <button key={item} className={`chip ${category === item ? "active" : ""}`} onClick={() => setCategory(item)}>{item}</button>)}</div>
             <h2 className="section-title">Discover Videos</h2>
-
-            {loadingVideos ? (
-              <p className="muted">Loading videos...</p>
-            ) : filteredVideos.length === 0 ? (
-              <div className="notice">
-                {search
-                  ? "No videos found. Try another video name."
-                  : "No videos available yet."}
-              </div>
-            ) : (
+            {loadingVideos ? <p className="muted">Loading videos...</p> : filteredVideos.length === 0 ? <div className="notice">{search ? "No videos found. Try another video name." : "No videos available yet."}</div> : (
               <div className="grid">
-                {filteredVideos.map(video => (
-                  <article className="card" key={video.id}>
-                    {playingVideo === video.id && videoUrls[video.id] ? (
-                      <video
-                        className="video-preview"
-                        src={videoUrls[video.id]}
-                        controls
-                        playsInline
-                      />
-                    ) : (
-                      <div className="thumb" style={{ background: "#29202c" }}>▶️</div>
-                    )}
-
+                {filteredVideos.map(video => {
+                  return <article className="card" key={video.id}>
+                    {playingVideo === video.id && videoUrls[video.id] ? <video className="video-preview" src={videoUrls[video.id]} controls playsInline /> : <div className="thumb" style={{ background: "#29202c" }}>▶️</div>}
                     <div className="card-info">
                       <h3>{video.title}</h3>
-
-                      <div className="muted">
-                        {video.file_size
-                          ? (video.file_size / (1024 * 1024)).toFixed(1) + " MB"
-                          : ""}
-                      </div>
-
-                      <div className="video-actions">
-                        <button
-                          className="primary"
-                          disabled={!videoUrls[video.id]}
-                          onClick={() => {
-                            setPlayingVideo(playingVideo === video.id ? null : video.id);
-                            setSettingsVideo(null);
-                          }}
-                        >
-                          {playingVideo === video.id ? "Close Player" : "Play"}
-                        </button>
-                      </div>
+                      <div className="muted">{video.file_size ? (video.file_size / (1024 * 1024)).toFixed(1) + " MB" : ""}</div>
+                      <button className="profile-link" style={{ marginTop: 10 }} onClick={() => openProfile(video.owner_id)}>View Creator Channel</button>
+                      <div className="video-actions"><button className="primary" disabled={!videoUrls[video.id]} onClick={() => { setPlayingVideo(playingVideo === video.id ? null : video.id); setSettingsVideo(null); }}>{playingVideo === video.id ? "Close Player" : "Play"}</button></div>
                     </div>
-                  </article>
-                ))}
+                  </article>;
+                })}
               </div>
             )}
-
-            <h2 className="section-title" style={{ marginTop: 35 }}>
-              My Uploaded Videos
-            </h2>
-
-            {!user ? (
-              <div className="notice">
-                Log in to see and manage your own uploaded videos.
-              </div>
-            ) : loadingVideos ? (
-              <p className="muted">Loading your videos...</p>
-            ) : myUploadedVideos.length === 0 ? (
-              <p className="muted">
-                {search
-                  ? "No matching videos in your uploads."
-                  : "You have not uploaded any videos yet."}
-              </p>
-            ) : (
+            <h2 className="section-title" style={{ marginTop: 35 }}>My Uploaded Videos</h2>
+            {!user ? <div className="notice">Log in to see and manage your own uploaded videos.</div> : loadingVideos ? <p className="muted">Loading your videos...</p> : myUploadedVideos.length === 0 ? <p className="muted">{search ? "No matching videos in your uploads." : "You have not uploaded any videos yet."}</p> : (
               <div className="grid">
-                {myUploadedVideos.map(video => (
-                  <article className="card" key={video.id}>
-                    {playingVideo === video.id && videoUrls[video.id] ? (
-                      <>
-                        <video
-                          className="video-preview"
-                          src={videoUrls[video.id]}
-                          controls
-                          playsInline
-                        />
-
-                        <div className="settings-wrap">
-                          <button
-                            className="settings-button"
-                            onClick={() => setSettingsVideo(settingsVideo === video.id ? null : video.id)}
-                          >
-                            ⚙️ Settings
-                          </button>
-
-                          {settingsVideo === video.id && (
-                            <div className="settings-panel">
-                              <strong>Audio & Language</strong>
-
-                              <label>Audio Track</label>
-                              <select
-                                value={audioMode}
-                                onChange={e => setAudioMode(e.target.value)}
-                              >
-                                <option>Original Audio</option>
-                                <option>AI Dubbing</option>
-                              </select>
-
-                              {audioMode === "AI Dubbing" && (
-                                <>
-                                  <label>Dubbing Language</label>
-                                  <select
-                                    value={dubLanguage}
-                                    onChange={e => setDubLanguage(e.target.value)}
-                                  >
-                                    {languages.map(language => (
-                                      <option key={language}>{language}</option>
-                                    ))}
-                                  </select>
-
-                                  <div className="settings-note">
-                                    AI dubbing engine is not connected yet. Your language preference is selected, but the video's voice will not change until processing is implemented.
-                                  </div>
-                                </>
-                              )}
-                            </div>
-                          )}
-                        </div>
-                      </>
-                    ) : (
-                      <div className="thumb" style={{ background: "#29202c" }}>▶️</div>
-                    )}
-
-                    <div className="card-info">
-                      <h3>{video.title}</h3>
-
-                      <div className="muted">
-                        {video.file_size
-                          ? (video.file_size / (1024 * 1024)).toFixed(1) + " MB"
-                          : ""}
-                      </div>
-
-                      <div className="video-actions">
-                        <button
-                          className="primary"
-                          disabled={!videoUrls[video.id]}
-                          onClick={() => {
-                            setPlayingVideo(playingVideo === video.id ? null : video.id);
-                            setSettingsVideo(null);
-                          }}
-                        >
-                          {playingVideo === video.id ? "Close Player" : "Play"}
-                        </button>
-
-                        <button
-                          className="danger"
-                          onClick={() => deleteVideo(video)}
-                        >
-                          Delete
-                        </button>
-                      </div>
+                {myUploadedVideos.map(video => <article className="card" key={video.id}>
+                  {playingVideo === video.id && videoUrls[video.id] ? <>
+                    <video className="video-preview" src={videoUrls[video.id]} controls playsInline />
+                    <div className="settings-wrap"><button className="settings-button" onClick={() => setSettingsVideo(settingsVideo === video.id ? null : video.id)}>⚙️ Settings</button>
+                      {settingsVideo === video.id && <div className="settings-panel"><strong>Audio & Language</strong><label>Audio Track</label><select value={audioMode} onChange={e => setAudioMode(e.target.value)}><option>Original Audio</option><option>AI Dubbing</option></select>
+                        {audioMode === "AI Dubbing" && <><label>Dubbing Language</label><select value={dubLanguage} onChange={e => setDubLanguage(e.target.value)}>{languages.map(language => <option key={language}>{language}</option>)}</select><div className="settings-note">AI dubbing engine is not connected yet. Your language preference is selected, but the video's voice will not change until processing is implemented.</div></>}
+                      </div>}
                     </div>
-                  </article>
-                ))}
+                  </> : <div className="thumb" style={{ background: "#29202c" }}>▶️</div>}
+                  <div className="card-info"><h3>{video.title}</h3><div className="muted">{video.file_size ? (video.file_size / (1024 * 1024)).toFixed(1) + " MB" : ""}</div>
+                    <div className="video-actions"><button className="primary" disabled={!videoUrls[video.id]} onClick={() => { setPlayingVideo(playingVideo === video.id ? null : video.id); setSettingsVideo(null); }}>{playingVideo === video.id ? "Close Player" : "Play"}</button><button className="danger" onClick={() => deleteVideo(video)}>Delete</button></div>
+                  </div>
+                </article>)}
               </div>
             )}
-
             {status && <div className="message">{status}</div>}
           </section>
-
           <section className="section">
-            <h2 className="section-title">Watch a YouTube Video</h2>
-
-            <div className="panel">
-              <div className="player">
-                {videoId ? (
-                  <iframe
-                    src={`https://www.youtube-nocookie.com/embed/${videoId}`}
-                    title="TUBEXA video player"
-                    allowFullScreen
-                  />
-                ) : (
-                  <div>
-                    <div style={{ fontSize: 45, color: "#ff3155" }}>▶</div>
-                    Enter a YouTube video URL
-                  </div>
-                )}
-              </div>
-
-              <div className="urlrow">
-                <input
-                  value={youtubeUrl}
-                  onChange={e => setYoutubeUrl(e.target.value)}
-                  placeholder="Paste YouTube video link..."
-                />
-                <button className="primary" onClick={playVideo}>
-                  Play Video
-                </button>
-              </div>
-
-              <div className="notice">
-                YouTube's embedded player controls audio tracks managed by YouTube. TUBEXA cannot add its own AI audio track to an embedded YouTube video.
-              </div>
-
+            <h2 className="section-title">Watch a YouTube Video</h2><div className="panel"><div className="player">{videoId ? <iframe src={`https://www.youtube-nocookie.com/embed/${videoId}`} title="TUBEXA video player" allowFullScreen /> : <div><div style={{ fontSize: 45, color: "#ff3155" }}>▶</div>Enter a YouTube video URL</div>}</div>
+              <div className="urlrow"><input value={youtubeUrl} onChange={e => setYoutubeUrl(e.target.value)} placeholder="Paste YouTube video link..." /><button className="primary" onClick={playVideo}>Play Video</button></div>
+              <div className="notice">YouTube's embedded player controls audio tracks managed by YouTube. TUBEXA cannot add its own AI audio track to an embedded YouTube video.</div>
               {status && <div className="message">{status}</div>}
             </div>
           </section>
         </main>
       ) : (
         <main>
-          <section className="hero">
-            <div className="tag">TUBEXA VIDEO STUDIO</div>
-            <h1>Upload<br /><span>Your Video</span></h1>
-            <p className="sub">
-              Upload your video securely to your TUBEXA account.
-            </p>
-          </section>
-
-          <section className="section">
-            <div className="panel">
-              <h2 className="section-title">Upload Your Video</h2>
-
-              {!user && (
-                <div className="notice">
-                  Please log in before uploading videos.
-                </div>
-              )}
-
-              <div className="upload">
-                <div style={{ fontSize: 42 }}>📁</div>
-                <h3>Select Your Video</h3>
-                <p className="muted">MP4, WebM or MOV · Maximum 50 MB</p>
-
-                <input
-                  id="video-upload"
-                  type="file"
-                  accept="video/mp4,video/webm,video/quicktime"
-                  onChange={selectFile}
-                  disabled={!user || uploading}
-                />
-
-                {videoFile && (
-                  <p style={{ color: "#72e0ad", overflowWrap: "anywhere" }}>
-                    Selected: {videoFile.name} ({(videoFile.size / (1024 * 1024)).toFixed(1)} MB)
-                  </p>
-                )}
-              </div>
-
-              <button
-                className="primary"
-                style={{ width: "100%", marginTop: 20 }}
-                onClick={uploadVideo}
-                disabled={!user || !videoFile || uploading}
-              >
-                {uploading ? "Uploading..." : "Upload Video"}
-              </button>
-
-              {status && <div className="message">{status}</div>}
-            </div>
-          </section>
+          <section className="hero"><div className="tag">TUBEXA VIDEO STUDIO</div><h1>Upload<br /><span>Your Video</span></h1><p className="sub">Upload your video securely to your TUBEXA account.</p></section>
+          <section className="section"><div className="panel"><h2 className="section-title">Upload Your Video</h2>
+            {!user && <div className="notice">Please log in before uploading videos.</div>}
+            <div className="upload"><div style={{ fontSize: 42 }}>📁</div><h3>Select Your Video</h3><p className="muted">MP4, WebM or MOV · Maximum 50 MB</p><input id="video-upload" type="file" accept="video/mp4,video/webm,video/quicktime" onChange={selectFile} disabled={!user || uploading} />{videoFile && <p style={{ color: "#72e0ad", overflowWrap: "anywhere" }}>Selected: {videoFile.name} ({(videoFile.size / (1024 * 1024)).toFixed(1)} MB)</p>}</div>
+            <button className="primary" style={{ width: "100%", marginTop: 20 }} onClick={uploadVideo} disabled={!user || !videoFile || uploading}>{uploading ? "Uploading..." : "Upload Video"}</button>{status && <div className="message">{status}</div>}
+          </div></section>
         </main>
       )}
-
       <footer>© 2026 TUBEXA · Your Video World</footer>
     </div>
   );
