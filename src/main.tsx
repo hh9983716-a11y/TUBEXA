@@ -201,24 +201,29 @@ function App() {
       setSubscriptionMessage("");
       setSubscriberCount(0);
       setIsSubscribed(false);
-      if (!viewedProfile || !user) return;
-      const { count, error: countError } = await supabase
-        .from("subscribers")
-        .select("id", { count: "exact", head: true })
-        .eq("channel_id", viewedProfile.id);
-      const { data: ownSubscription, error: ownError } = await supabase
-        .from("subscribers")
-        .select("id")
-        .eq("channel_id", viewedProfile.id)
-        .eq("subscriber_id", user.id)
-        .maybeSingle();
+      if (!viewedProfile) return;
+      const { data: count, error: countError } = await supabase
+        .rpc("tubexa_subscriber_count", { p_channel_id: viewedProfile.id });
       if (!active) return;
-      if (countError || ownError) {
-        setSubscriptionMessage("Could not load subscription information.");
+      if (countError) {
+        setSubscriptionMessage("Could not load subscriber count.");
         return;
       }
-      setSubscriberCount(count ?? 0);
-      setIsSubscribed(!!ownSubscription);
+      setSubscriberCount(Number(count ?? 0));
+      if (user) {
+        const { data: ownSubscription, error: ownError } = await supabase
+          .from("subscribers")
+          .select("id")
+          .eq("channel_id", viewedProfile.id)
+          .eq("subscriber_id", user.id)
+          .maybeSingle();
+        if (!active) return;
+        if (ownError) {
+          setSubscriptionMessage("Could not load your subscription status.");
+          return;
+        }
+        setIsSubscribed(!!ownSubscription);
+      }
     }
     loadSubscriptionState();
     return () => { active = false; };
@@ -674,7 +679,7 @@ function App() {
             </div>
             {viewedProfile.bio && <p className="sub" style={{ marginTop: 20 }}>{viewedProfile.bio}</p>}
             <div className="panel" style={{ marginTop: 20, display: "flex", alignItems: "center", gap: 15, flexWrap: "wrap" }}>
-              <div><strong>{user ? subscriberCount : "—"}</strong><div className="muted">Subscribers</div></div>
+              <div><strong>{subscriberCount}</strong><div className="muted">Subscribers</div></div>
               {user && viewedProfile.id !== user.id ? (
                 <button className="primary" onClick={toggleSubscription} disabled={subscriptionLoading}>
                   {subscriptionLoading ? "Please wait..." : isSubscribed ? "Subscribed ✓" : "Subscribe"}
