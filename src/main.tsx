@@ -124,6 +124,8 @@ function App() {
   const [playlistMessage, setPlaylistMessage] = useState("");
   const [publicPlaylists, setPublicPlaylists] = useState<Playlist[]>([]);
   const [publicPlaylistOwners, setPublicPlaylistOwners] = useState<Profile[]>([]);
+  const [publicPlaylistVideos, setPublicPlaylistVideos] = useState<Video[]>([]);
+  const [publicPlaylistVideoUrls, setPublicPlaylistVideoUrls] = useState<Record<string, string>>({});
   const [publicPlaylistItems, setPublicPlaylistItems] = useState<PlaylistVideo[]>([]);
   const [publicPlaylistsLoading, setPublicPlaylistsLoading] = useState(false);
   const [openPublicPlaylistId, setOpenPublicPlaylistId] = useState<string | null>(null);
@@ -434,8 +436,40 @@ function App() {
       if (itemsError) {
         console.error("Could not load public playlist videos:", itemsError.message);
         setPublicPlaylistItems([]);
+        setPublicPlaylistVideos([]);
+        setPublicPlaylistVideoUrls({});
       } else {
-        setPublicPlaylistItems((items ?? []) as PlaylistVideo[]);
+        const playlistRows = (items ?? []) as PlaylistVideo[];
+        setPublicPlaylistItems(playlistRows);
+        const videoIds = [...new Set(playlistRows.map(item => item.video_id))];
+        if (videoIds.length) {
+          const { data: videos, error: videosError } = await supabase
+            .from("videos")
+            .select("id,title,category,owner_id,storage_path,content_type,file_size,created_at")
+            .in("id", videoIds);
+          if (!active) return;
+          if (videosError) {
+            console.error("Could not load public playlist video details:", videosError.message);
+            setPublicPlaylistVideos([]);
+          } else {
+            const videoList = (videos ?? []) as Video[];
+            setPublicPlaylistVideos(videoList);
+            const urls: Record<string, string> = {};
+            for (const video of videoList) {
+              if (!video.storage_path) continue;
+              const { data: signed, error: signedError } = await supabase.storage
+                .from(STORAGE_BUCKET)
+                .createSignedUrl(video.storage_path, 3600);
+              if (signedError) console.error("Public playlist video URL error:", signedError.message);
+              else if (signed?.signedUrl) urls[video.id] = signed.signedUrl;
+            }
+            if (!active) return;
+            setPublicPlaylistVideoUrls(urls);
+          }
+        } else {
+          setPublicPlaylistVideos([]);
+          setPublicPlaylistVideoUrls({});
+        }
       }
       setPublicPlaylistsLoading(false);
     }
@@ -1416,15 +1450,21 @@ function App() {
                           {expanded && (
                             <div style={{ display: "grid", gap: 10, marginTop: 12 }}>
                               {items.length === 0 ? <p className="muted">This playlist is currently empty.</p> : items.map(item => {
-                                const video = myVideos.find(entry => entry.id === item.video_id);
+                                const video = publicPlaylistVideos.find(entry => entry.id === item.video_id);
+                                const videoUrl = publicPlaylistVideoUrls[item.video_id];
                                 return (
-                                  <div key={item.video_id} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 10, borderTop: "1px solid #39343d", paddingTop: 9 }}>
-                                    <span>{video?.title || "Video unavailable"}</span>
-                                    {video && videoUrls[video.id] ? (
-                                      <button className="primary" onClick={() => { setPlayingVideo(playingVideo === video.id ? null : video.id); setSettingsVideo(null); }}>
-                                        {playingVideo === video.id ? "Close Player" : "Play"}
-                                      </button>
-                                    ) : <span className="muted">Unavailable</span>}
+                                  <div key={item.video_id} style={{ display: "grid", gap: 8, borderTop: "1px solid #39343d", paddingTop: 9 }}>
+                                    <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 10 }}>
+                                      <span>{video?.title || "Video unavailable"}</span>
+                                      {video && videoUrl ? (
+                                        <button className="primary" onClick={() => { setPlayingVideo(playingVideo === video.id ? null : video.id); setSettingsVideo(null); }}>
+                                          {playingVideo === video.id ? "Close Player" : "Play"}
+                                        </button>
+                                      ) : <span className="muted">Unavailable</span>}
+                                    </div>
+                                    {video && videoUrl && playingVideo === video.id && (
+                                      <video className="video-preview" src={videoUrl} controls playsInline onPlay={() => { void recordVideoView(video.id); }} />
+                                    )}
                                   </div>
                                 );
                               })}
