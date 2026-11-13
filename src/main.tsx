@@ -21,6 +21,15 @@ type Profile = {
   bio: string | null;
 };
 
+type VideoComment = {
+  id: string;
+  video_id: string;
+  author_id: string;
+  content: string;
+  created_at: string;
+  author?: Pick<Profile, "username" | "display_name" | "avatar_url"> | null;
+};
+
 const languages = [
   "Urdu", "Hindi", "English", "Arabic", "Spanish", "French",
   "German", "Turkish", "Chinese", "Japanese", "Portuguese",
@@ -76,6 +85,12 @@ function App() {
   const [subscriptionMessage, setSubscriptionMessage] = useState("");
   const [likedVideos, setLikedVideos] = useState<string[]>([]);
   const [likeLoading, setLikeLoading] = useState<string | null>(null);
+  const [commentsByVideo, setCommentsByVideo] = useState<Record<string, VideoComment[]>>({});
+  const [commentOpenVideoId, setCommentOpenVideoId] = useState<string | null>(null);
+  const [commentDrafts, setCommentDrafts] = useState<Record<string, string>>({});
+  const [commentLoadingId, setCommentLoadingId] = useState<string | null>(null);
+  const [commentSendingId, setCommentSendingId] = useState<string | null>(null);
+  const [commentMessages, setCommentMessages] = useState<Record<string, string>>({});
 
   useEffect(() => {
     async function loadSession() {
@@ -263,6 +278,111 @@ function App() {
     } finally {
       setLikeLoading(null);
     }
+  }
+
+  async function loadVideoComments(videoId: string) {
+    setCommentLoadingId(videoId);
+    setCommentMessages(current => ({ ...current, [videoId]: "" }));
+    try {
+      const { data, error } = await supabase
+        .from("video_comments")
+        .select("id,video_id,author_id,content,created_at")
+        .eq("video_id", videoId)
+        .order("created_at", { ascending: true });
+      if (error) throw error;
+
+      const rows = (data ?? []) as Omit<VideoComment, "author">[];
+      const authorIds = [...new Set(rows.map(comment => comment.author_id))];
+      const authors: Record<string, VideoComment["author"]> = {};
+      if (authorIds.length) {
+        const { data: profiles, error: profilesError } = await supabase
+          .from("profiles")
+          .select("id,username,display_name,avatar_url")
+          .in("id", authorIds);
+        if (profilesError) throw profilesError;
+        for (const author of profiles ?? []) {
+          authors[author.id] = {
+            username: author.username,
+            display_name: author.display_name,
+            avatar_url: author.avatar_url,
+          };
+        }
+      }
+      setCommentsByVideo(current => ({
+        ...current,
+        [videoId]: rows.map(comment => ({ ...comment, author: authors[comment.author_id] ?? null })),
+      }));
+    } catch (error: any) {
+      setCommentMessages(current => ({
+        ...current,
+        [videoId]: error?.message || "Comments could not be loaded.",
+      }));
+    } finally {
+      setCommentLoadingId(null);
+    }
+  }
+
+  async function toggleVideoComments(videoId: string) {
+    if (commentOpenVideoId === videoId) {
+      setCommentOpenVideoId(null);
+      return;
+    }
+    setCommentOpenVideoId(videoId);
+    await loadVideoComments(videoId);
+  }
+
+  async function submitVideoComment(videoId: string) {
+    if (!user) {
+      setPage("auth");
+      return;
+    }
+    if (commentSendingId) return;
+    const content = (commentDrafts[videoId] ?? "").trim();
+    if (!content) {
+      setCommentMessages(current => ({ ...current, [videoId]: "Write a comment first." }));
+      return;
+    }
+    if (content.length > 1000) {
+      setCommentMessages(current => ({ ...current, [videoId]: "Comments must be 1,000 characters or fewer." }));
+      return;
+    }
+    setCommentSendingId(videoId);
+    setCommentMessages(current => ({ ...current, [videoId]: "" }));
+    try {
+      const { error } = await supabase.from("video_comments").insert({
+        video_id: videoId,
+        author_id: user.id,
+        content,
+      });
+      if (error) throw error;
+      setCommentDrafts(current => ({ ...current, [videoId]: "" }));
+      await loadVideoComments(videoId);
+    } catch (error: any) {
+      setCommentMessages(current => ({
+        ...current,
+        [videoId]: error?.message || "Your comment could not be posted.",
+      }));
+    } finally {
+      setCommentSendingId(null);
+    }
+  }
+
+  async function deleteVideoComment(commentId: string, videoId: string) {
+    if (!user) return;
+    setCommentMessages(current => ({ ...current, [videoId]: "" }));
+    const { error } = await supabase
+      .from("video_comments")
+      .delete()
+      .eq("id", commentId)
+      .eq("author_id", user.id);
+    if (error) {
+      setCommentMessages(current => ({ ...current, [videoId]: error.message }));
+      return;
+    }
+    setCommentsByVideo(current => ({
+      ...current,
+      [videoId]: (current[videoId] ?? []).filter(comment => comment.id !== commentId),
+    }));
   }
 
   async function toggleSubscription() {
@@ -629,12 +749,80 @@ function App() {
     .avatar{width:112px;height:112px;border-radius:50%;border:5px solid #15151b;background:#39313d;object-fit:cover;display:grid;place-items:center;font-size:38px}
     .profile-name{padding-top:48px}
     .profile-name h2{margin:0 0 7px}
-    .profile-link{background:#28202c;color:#ffbdca;border:1px solid #51404b;border-radius:8px;padding:9px 12px}
+        .profile-link{background:#28202c;color:#ffbdca;border:1px solid #51404b;border-radius:8px;padding:9px 12px}
+    .comments-area{margin-top:10px}
+    .comments-panel{margin-top:10px;padding:13px;background:#100f14;border:1px solid #39343d;border-radius:12px}
+    .comments-panel textarea{width:100%;min-height:76px;resize:vertical;background:#090a0e;border:1px solid #39343d;color:white;border-radius:9px;padding:11px}
+    .comment-form-footer{display:flex;justify-content:space-between;align-items:center;gap:10px;margin-top:8px}
+    .comment-list{display:flex;flex-direction:column;gap:13px;margin-top:15px}
+    .comment-item{display:flex;align-items:flex-start;gap:10px;padding-top:12px;border-top:1px solid #302b34}
+    .comment-item img,.comment-avatar{width:34px;height:34px;flex:0 0 34px;border-radius:50%;object-fit:cover;background:#39313d;display:grid;place-items:center}
+    .comment-body{min-width:0;flex:1}
+    .comment-body strong{font-size:13px}
+    .comment-body p{margin:5px 0;white-space:pre-wrap;overflow-wrap:anywhere;color:#eee;font-size:14px}
+    .comment-delete{background:transparent;border:0;color:#ff91a4;font-size:12px;padding:5px}
     footer{text-align:center;padding:28px;color:#777;border-top:1px solid #29252b}
     @media(max-width:700px){.search-form{width:100%;order:3}.two{grid-template-columns:1fr}.urlrow{flex-direction:column}.urlrow button{width:100%}.hero{padding-top:40px}.topbar{justify-content:flex-start}.profile-cover{height:150px}}
   `;
 
-  const displayName = (p: Profile | null) => p?.display_name || p?.username || "TUBEXA User";  return (
+  const displayName = (p: Profile | null) => p?.display_name || p?.username || "TUBEXA User";
+
+  function renderVideoComments(videoId: string) {
+    const isOpen = commentOpenVideoId === videoId;
+    const comments = commentsByVideo[videoId] ?? [];
+    return (
+      <div className="comments-area">
+        <button className="profile-link" style={{ marginTop: 10 }} onClick={() => toggleVideoComments(videoId)}>
+          {isOpen ? "Hide Comments" : "Comments"}
+        </button>
+        {isOpen && (
+          <div className="comments-panel">
+            {user ? (
+              <form onSubmit={event => { event.preventDefault(); submitVideoComment(videoId); }}>
+                <textarea
+                  value={commentDrafts[videoId] ?? ""}
+                  onChange={event => setCommentDrafts(current => ({ ...current, [videoId]: event.target.value }))}
+                  maxLength={1000}
+                  placeholder="Write a comment..."
+                  aria-label="Write a comment"
+                />
+                <div className="comment-form-footer">
+                  <span className="muted">{(commentDrafts[videoId] ?? "").length}/1000</span>
+                  <button className="primary" type="submit" disabled={commentSendingId === videoId}>
+                    {commentSendingId === videoId ? "Posting..." : "Post Comment"}
+                  </button>
+                </div>
+              </form>
+            ) : (
+              <button className="profile-link" onClick={() => setPage("auth")}>Login to Comment</button>
+            )}
+            {commentMessages[videoId] && <div className="message">{commentMessages[videoId]}</div>}
+            {commentLoadingId === videoId ? <p className="muted">Loading comments...</p> : comments.length === 0 ? (
+              <p className="muted">No comments yet. Start the conversation.</p>
+            ) : (
+              <div className="comment-list">
+                {comments.map(comment => (
+                  <div className="comment-item" key={comment.id}>
+                    {comment.author?.avatar_url ? <img src={comment.author.avatar_url} alt="" /> : <div className="comment-avatar">👤</div>}
+                    <div className="comment-body">
+                      <strong>{comment.author?.display_name || comment.author?.username || "TUBEXA User"}</strong>
+                      <p>{comment.content}</p>
+                      <span className="muted">{new Date(comment.created_at).toLocaleString()}</span>
+                    </div>
+                    {user?.id === comment.author_id && (
+                      <button className="comment-delete" onClick={() => deleteVideoComment(comment.id, videoId)} aria-label="Delete your comment">Delete</button>
+                    )}
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+        )}
+      </div>
+    );
+  }
+
+  return (
     <div className="app">
       <style>{styles}</style>
 
@@ -732,6 +920,7 @@ function App() {
                   <article className="card" key={video.id}>
                     {playingVideo === video.id && videoUrls[video.id] ? <video className="video-preview" src={videoUrls[video.id]} controls playsInline /> : <div className="thumb">▶️</div>}
                     <div className="card-info"><h3>{video.title}</h3><button className="primary" disabled={!videoUrls[video.id]} onClick={() => setPlayingVideo(playingVideo === video.id ? null : video.id)}>{playingVideo === video.id ? "Close Player" : "Play"}</button><button className="profile-link" style={{ marginTop: 10 }} onClick={() => toggleVideoLike(video.id)} disabled={likeLoading === video.id}>{likeLoading === video.id ? "Please wait..." : likedVideos.includes(video.id) ? "♥ Liked" : "♡ Like"}</button></div>
+                    {renderVideoComments(video.id)}
                   </article>
                 ))}
               </div>
@@ -762,6 +951,7 @@ function App() {
                       <button className="profile-link" style={{ marginTop: 10 }} onClick={() => openProfile(video.owner_id)}>View Creator Channel</button>
                       <div className="video-actions"><button className="primary" disabled={!videoUrls[video.id]} onClick={() => { setPlayingVideo(playingVideo === video.id ? null : video.id); setSettingsVideo(null); }}>{playingVideo === video.id ? "Close Player" : "Play"}</button><button className="profile-link" onClick={() => toggleVideoLike(video.id)} disabled={likeLoading === video.id}>{likeLoading === video.id ? "Please wait..." : likedVideos.includes(video.id) ? "♥ Liked" : "♡ Like"}</button></div>
                     </div>
+                    {renderVideoComments(video.id)}
                   </article>;
                 })}
               </div>
@@ -781,6 +971,7 @@ function App() {
                   <div className="card-info"><h3>{video.title}</h3><div className="muted">{video.file_size ? (video.file_size / (1024 * 1024)).toFixed(1) + " MB" : ""}</div>
                     <div className="video-actions"><button className="primary" disabled={!videoUrls[video.id]} onClick={() => { setPlayingVideo(playingVideo === video.id ? null : video.id); setSettingsVideo(null); }}>{playingVideo === video.id ? "Close Player" : "Play"}</button><button className="profile-link" onClick={() => toggleVideoLike(video.id)} disabled={likeLoading === video.id}>{likeLoading === video.id ? "Please wait..." : likedVideos.includes(video.id) ? "♥ Liked" : "♡ Like"}</button><button className="danger" onClick={() => deleteVideo(video)}>Delete</button></div>
                   </div>
+                  {renderVideoComments(video.id)}
                 </article>)}
               </div>
             )}
