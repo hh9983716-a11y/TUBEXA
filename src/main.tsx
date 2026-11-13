@@ -121,6 +121,10 @@ function App() {
   const [playlistLoading, setPlaylistLoading] = useState(false);
   const [playlistSavingId, setPlaylistSavingId] = useState<string | null>(null);
   const [playlistMessage, setPlaylistMessage] = useState("");
+  const [publicPlaylists, setPublicPlaylists] = useState<Playlist[]>([]);
+  const [publicPlaylistItems, setPublicPlaylistItems] = useState<PlaylistVideo[]>([]);
+  const [publicPlaylistsLoading, setPublicPlaylistsLoading] = useState(false);
+  const [openPublicPlaylistId, setOpenPublicPlaylistId] = useState<string | null>(null);
 
   useEffect(() => {
     async function loadSession() {
@@ -376,6 +380,49 @@ function App() {
   useEffect(() => {
     refreshPlaylists();
   }, [user]);
+
+  useEffect(() => {
+    let active = true;
+    async function loadPublicPlaylists() {
+      setPublicPlaylistsLoading(true);
+      const { data, error } = await supabase
+        .from("playlists")
+        .select("id,name,description,is_public,created_at")
+        .eq("is_public", true)
+        .order("created_at", { ascending: false })
+        .limit(60);
+      if (!active) return;
+      if (error) {
+        console.error("Could not load public playlists:", error.message);
+        setPublicPlaylists([]);
+        setPublicPlaylistItems([]);
+        setPublicPlaylistsLoading(false);
+        return;
+      }
+      const list = (data ?? []) as Playlist[];
+      setPublicPlaylists(list);
+      if (!list.length) {
+        setPublicPlaylistItems([]);
+        setPublicPlaylistsLoading(false);
+        return;
+      }
+      const { data: items, error: itemsError } = await supabase
+        .from("playlist_videos")
+        .select("playlist_id,video_id,position,added_at")
+        .in("playlist_id", list.map(item => item.id))
+        .order("position", { ascending: true });
+      if (!active) return;
+      if (itemsError) {
+        console.error("Could not load public playlist videos:", itemsError.message);
+        setPublicPlaylistItems([]);
+      } else {
+        setPublicPlaylistItems((items ?? []) as PlaylistVideo[]);
+      }
+      setPublicPlaylistsLoading(false);
+    }
+    loadPublicPlaylists();
+    return () => { active = false; };
+  }, []);
 
   async function createPlaylist(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -1319,6 +1366,50 @@ function App() {
                 )}
               </section>
             )}
+
+            <section style={{ marginTop: 38 }}>
+              <h2 className="section-title">Explore Public Playlists</h2>
+              <p className="muted">Discover playlists that creators have chosen to share with everyone.</p>
+              {publicPlaylistsLoading ? <p className="muted">Loading public playlists...</p> : publicPlaylists.length === 0 ? (
+                <div className="notice">No public playlists have been shared yet.</div>
+              ) : (
+                <div className="grid">
+                  {publicPlaylists.map(playlist => {
+                    const items = publicPlaylistItems.filter(item => item.playlist_id === playlist.id);
+                    const expanded = openPublicPlaylistId === playlist.id;
+                    return (
+                      <article className="card" key={playlist.id}>
+                        <div className="card-info">
+                          <h3>{playlist.name}</h3>
+                          {playlist.description && <p className="muted">{playlist.description}</p>}
+                          <div className="muted">{items.length} video{items.length === 1 ? "" : "s"} · Public playlist</div>
+                          <button className="profile-link" style={{ marginTop: 10 }} onClick={() => setOpenPublicPlaylistId(expanded ? null : playlist.id)}>
+                            {expanded ? "Hide Videos" : "View Playlist"}
+                          </button>
+                          {expanded && (
+                            <div style={{ display: "grid", gap: 10, marginTop: 12 }}>
+                              {items.length === 0 ? <p className="muted">This playlist is currently empty.</p> : items.map(item => {
+                                const video = myVideos.find(entry => entry.id === item.video_id);
+                                return (
+                                  <div key={item.video_id} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 10, borderTop: "1px solid #39343d", paddingTop: 9 }}>
+                                    <span>{video?.title || "Video unavailable"}</span>
+                                    {video && videoUrls[video.id] ? (
+                                      <button className="primary" onClick={() => { setPlayingVideo(playingVideo === video.id ? null : video.id); setSettingsVideo(null); }}>
+                                        {playingVideo === video.id ? "Close Player" : "Play"}
+                                      </button>
+                                    ) : <span className="muted">Unavailable</span>}
+                                  </div>
+                                );
+                              })}
+                            </div>
+                          )}
+                        </div>
+                      </article>
+                    );
+                  })}
+                </div>
+              )}
+            </section>
           </section>
           <section className="section">
             <h2 className="section-title">Watch a YouTube Video</h2><div className="panel"><div className="player">{videoId ? <iframe src={`https://www.youtube-nocookie.com/embed/${videoId}`} title="TUBEXA video player" allowFullScreen /> : <div><div style={{ fontSize: 45, color: "#ff3155" }}>▶</div>Enter a YouTube video URL</div>}</div>
