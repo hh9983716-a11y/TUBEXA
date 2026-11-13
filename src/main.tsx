@@ -347,6 +347,7 @@ function App() {
     if (!user) {
       setPlaylists([]);
       setPlaylistItems([]);
+      setPlaylistLoading(false);
       return;
     }
     setPlaylistLoading(true);
@@ -454,7 +455,8 @@ function App() {
     if (!playlistId) { setPlaylistMessage("Choose a playlist first."); return; }
     setPlaylistSavingId(videoId);
     setPlaylistMessage("");
-    const { error } = await supabase.from("playlist_videos").insert({ playlist_id: playlistId, video_id: videoId });
+    const nextPosition = playlistItems.filter(item => item.playlist_id === playlistId).length;
+    const { error } = await supabase.from("playlist_videos").insert({ playlist_id: playlistId, video_id: videoId, position: nextPosition });
     if (error?.code === "23505") setPlaylistMessage("This video is already in that playlist.");
     else if (error) setPlaylistMessage("Could not add video: " + error.message);
     else {
@@ -1350,9 +1352,12 @@ function App() {
                                 {items.map(item => {
                                   const video = myVideos.find(entry => entry.id === item.video_id);
                                   return (
-                                    <div key={item.video_id} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 10, borderTop: "1px solid #39343d", paddingTop: 9 }}>
+                                    <div key={item.video_id} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 10, borderTop: "1px solid #39343d", paddingTop: 9, flexWrap: "wrap" }}>
                                       <span>{video?.title || "Video unavailable"}</span>
-                                      <button className="comment-delete" onClick={() => removeVideoFromPlaylist(playlist.id, item.video_id)} disabled={playlistSavingId === playlist.id + ":" + item.video_id}>Remove</button>
+                                      <div style={{ display: "flex", gap: 7, alignItems: "center" }}>
+                                        {video && videoUrls[video.id] && <button className="primary" onClick={() => { setPlayingVideo(playingVideo === video.id ? null : video.id); setSettingsVideo(null); }}>{playingVideo === video.id ? "Close Player" : "Play"}</button>}
+                                        <button className="comment-delete" onClick={() => removeVideoFromPlaylist(playlist.id, item.video_id)} disabled={playlistSavingId === playlist.id + ":" + item.video_id}>Remove</button>
+                                      </div>
                                     </div>
                                   );
                                 })}
