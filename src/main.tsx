@@ -70,6 +70,10 @@ function App() {
   const [coverFile, setCoverFile] = useState<File | null>(null);
   const [viewedProfile, setViewedProfile] = useState<Profile | null>(null);
   const [profileVideos, setProfileVideos] = useState<Video[]>([]);
+  const [subscriberCount, setSubscriberCount] = useState(0);
+  const [isSubscribed, setIsSubscribed] = useState(false);
+  const [subscriptionLoading, setSubscriptionLoading] = useState(false);
+  const [subscriptionMessage, setSubscriptionMessage] = useState("");
 
   useEffect(() => {
     async function loadSession() {
@@ -189,6 +193,64 @@ function App() {
       setProfileVideos((videos ?? []) as Video[]);
     }
     setPage("channel");
+  }
+
+  useEffect(() => {
+    let active = true;
+    async function loadSubscriptionState() {
+      setSubscriptionMessage("");
+      setSubscriberCount(0);
+      setIsSubscribed(false);
+      if (!viewedProfile || !user) return;
+      const { count, error: countError } = await supabase
+        .from("subscribers")
+        .select("id", { count: "exact", head: true })
+        .eq("channel_id", viewedProfile.id);
+      const { data: ownSubscription, error: ownError } = await supabase
+        .from("subscribers")
+        .select("id")
+        .eq("channel_id", viewedProfile.id)
+        .eq("subscriber_id", user.id)
+        .maybeSingle();
+      if (!active) return;
+      if (countError || ownError) {
+        setSubscriptionMessage("Could not load subscription information.");
+        return;
+      }
+      setSubscriberCount(count ?? 0);
+      setIsSubscribed(!!ownSubscription);
+    }
+    loadSubscriptionState();
+    return () => { active = false; };
+  }, [viewedProfile, user]);
+
+  async function toggleSubscription() {
+    if (!viewedProfile || !user || subscriptionLoading) return;
+    if (viewedProfile.id === user.id) return;
+    setSubscriptionLoading(true);
+    setSubscriptionMessage("");
+    try {
+      if (isSubscribed) {
+        const { error } = await supabase.from("subscribers").delete()
+          .eq("channel_id", viewedProfile.id)
+          .eq("subscriber_id", user.id);
+        if (error) throw error;
+        setIsSubscribed(false);
+        setSubscriberCount(value => Math.max(0, value - 1));
+      } else {
+        const { error } = await supabase.from("subscribers").insert({
+          subscriber_id: user.id,
+          channel_id: viewedProfile.id,
+        });
+        if (error) throw error;
+        setIsSubscribed(true);
+        setSubscriberCount(value => value + 1);
+      }
+    } catch (error: any) {
+      setSubscriptionMessage(error?.message || "Subscription could not be updated.");
+    } finally {
+      setSubscriptionLoading(false);
+    }
   }
 
   async function uploadProfileImage(file: File, kind: "avatar" | "cover") {
@@ -611,6 +673,17 @@ function App() {
               <div className="profile-name"><h2>{displayName(viewedProfile)}</h2><div className="muted">@{viewedProfile.username || "username-not-set"}</div></div>
             </div>
             {viewedProfile.bio && <p className="sub" style={{ marginTop: 20 }}>{viewedProfile.bio}</p>}
+            <div className="panel" style={{ marginTop: 20, display: "flex", alignItems: "center", gap: 15, flexWrap: "wrap" }}>
+              <div><strong>{user ? subscriberCount : "—"}</strong><div className="muted">Subscribers</div></div>
+              {user && viewedProfile.id !== user.id ? (
+                <button className="primary" onClick={toggleSubscription} disabled={subscriptionLoading}>
+                  {subscriptionLoading ? "Please wait..." : isSubscribed ? "Subscribed ✓" : "Subscribe"}
+                </button>
+              ) : !user ? (
+                <button className="primary" onClick={() => setPage("auth")}>Login to Subscribe</button>
+              ) : <span className="muted">This is your channel</span>}
+              {subscriptionMessage && <div className="message" style={{ width: "100%" }}>{subscriptionMessage}</div>}
+            </div>
             <h2 className="section-title" style={{ marginTop: 35 }}>Channel Videos</h2>
             {profileVideos.length === 0 ? <div className="notice">اس چینل پر ابھی کوئی ویڈیو موجود نہیں۔</div> : (
               <div className="grid">
