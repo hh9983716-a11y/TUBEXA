@@ -31,6 +31,21 @@ type VideoComment = {
   author?: Pick<Profile, "username" | "display_name" | "avatar_url"> | null;
 };
 
+type Playlist = {
+  id: string;
+  name: string;
+  description: string;
+  is_public: boolean;
+  created_at: string;
+};
+
+type PlaylistVideo = {
+  playlist_id: string;
+  video_id: string;
+  position: number;
+  added_at: string;
+};
+
 const languages = [
   "Urdu", "Hindi", "English", "Arabic", "Spanish", "French",
   "German", "Turkish", "Chinese", "Japanese", "Portuguese",
@@ -97,6 +112,15 @@ function App() {
   const [savedVideoIds, setSavedVideoIds] = useState<string[]>([]);
   const [saveLoading, setSaveLoading] = useState<string | null>(null);
   const [videoViewCounts, setVideoViewCounts] = useState<Record<string, number>>({});
+  const [playlists, setPlaylists] = useState<Playlist[]>([]);
+  const [playlistItems, setPlaylistItems] = useState<PlaylistVideo[]>([]);
+  const [playlistName, setPlaylistName] = useState("");
+  const [playlistDescription, setPlaylistDescription] = useState("");
+  const [playlistIsPublic, setPlaylistIsPublic] = useState(false);
+  const [playlistSelections, setPlaylistSelections] = useState<Record<string, string>>({});
+  const [playlistLoading, setPlaylistLoading] = useState(false);
+  const [playlistSavingId, setPlaylistSavingId] = useState<string | null>(null);
+  const [playlistMessage, setPlaylistMessage] = useState("");
 
   useEffect(() => {
     async function loadSession() {
@@ -313,6 +337,123 @@ function App() {
     if (!countError) {
       setVideoViewCounts(current => ({ ...current, [videoId]: Number(data ?? 0) }));
     }
+  }
+
+  async function refreshPlaylists() {
+    if (!user) {
+      setPlaylists([]);
+      setPlaylistItems([]);
+      return;
+    }
+    setPlaylistLoading(true);
+    const { data, error } = await supabase
+      .from("playlists")
+      .select("id,name,description,is_public,created_at")
+      .eq("owner_id", user.id)
+      .order("created_at", { ascending: false });
+    if (error) {
+      setPlaylistMessage("Could not load playlists: " + error.message);
+      setPlaylistLoading(false);
+      return;
+    }
+    const list = (data ?? []) as Playlist[];
+    setPlaylists(list);
+    if (list.length === 0) {
+      setPlaylistItems([]);
+      setPlaylistLoading(false);
+      return;
+    }
+    const { data: items, error: itemError } = await supabase
+      .from("playlist_videos")
+      .select("playlist_id,video_id,position,added_at")
+      .in("playlist_id", list.map(item => item.id))
+      .order("position", { ascending: true });
+    if (itemError) setPlaylistMessage("Could not load playlist videos: " + itemError.message);
+    else setPlaylistItems((items ?? []) as PlaylistVideo[]);
+    setPlaylistLoading(false);
+  }
+
+  useEffect(() => {
+    refreshPlaylists();
+  }, [user]);
+
+  async function createPlaylist(event: React.FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    if (!user) { setPage("auth"); return; }
+    const name = playlistName.trim();
+    if (!name) { setPlaylistMessage("Please enter a playlist name."); return; }
+    setPlaylistSavingId("create");
+    setPlaylistMessage("");
+    const { error } = await supabase.from("playlists").insert({
+      owner_id: user.id,
+      name,
+      description: playlistDescription.trim(),
+      is_public: playlistIsPublic,
+    });
+    if (error) setPlaylistMessage("Could not create playlist: " + error.message);
+    else {
+      setPlaylistName("");
+      setPlaylistDescription("");
+      setPlaylistIsPublic(false);
+      setPlaylistMessage("Playlist created successfully.");
+      await refreshPlaylists();
+    }
+    setPlaylistSavingId(null);
+  }
+
+  async function addVideoToPlaylist(videoId: string) {
+    const playlistId = playlistSelections[videoId];
+    if (!user) { setPage("auth"); return; }
+    if (!playlistId) { setPlaylistMessage("Choose a playlist first."); return; }
+    setPlaylistSavingId(videoId);
+    setPlaylistMessage("");
+    const { error } = await supabase.from("playlist_videos").insert({ playlist_id: playlistId, video_id: videoId });
+    if (error?.code === "23505") setPlaylistMessage("This video is already in that playlist.");
+    else if (error) setPlaylistMessage("Could not add video: " + error.message);
+    else {
+      setPlaylistMessage("Video added to playlist.");
+      await refreshPlaylists();
+    }
+    setPlaylistSavingId(null);
+  }
+
+  async function removeVideoFromPlaylist(playlistId: string, videoId: string) {
+    const key = playlistId + ":" + videoId;
+    setPlaylistSavingId(key);
+    const { error } = await supabase.from("playlist_videos")
+      .delete().eq("playlist_id", playlistId).eq("video_id", videoId);
+    if (error) setPlaylistMessage("Could not remove video: " + error.message);
+    else {
+      setPlaylistItems(current => current.filter(item => !(item.playlist_id === playlistId && item.video_id === videoId)));
+      setPlaylistMessage("Video removed from playlist.");
+    }
+    setPlaylistSavingId(null);
+  }
+
+  async function togglePlaylistVisibility(playlist: Playlist) {
+    setPlaylistSavingId(playlist.id);
+    const { error } = await supabase.from("playlists")
+      .update({ is_public: !playlist.is_public, updated_at: new Date().toISOString() })
+      .eq("id", playlist.id).eq("owner_id", user.id);
+    if (error) setPlaylistMessage("Could not update playlist: " + error.message);
+    else {
+      setPlaylists(current => current.map(item => item.id === playlist.id ? { ...item, is_public: !item.is_public } : item));
+      setPlaylistMessage(playlist.is_public ? "Playlist is now private." : "Playlist is now public.");
+    }
+    setPlaylistSavingId(null);
+  }
+
+  async function deletePlaylist(playlistId: string) {
+    if (!window.confirm("Delete this playlist? Its saved list will also be removed.")) return;
+    setPlaylistSavingId(playlistId);
+    const { error } = await supabase.from("playlists").delete().eq("id", playlistId).eq("owner_id", user.id);
+    if (error) setPlaylistMessage("Could not delete playlist: " + error.message);
+    else {
+      setPlaylists(current => current.filter(item => item.id !== playlistId));
+      setPlaylistItems(current => current.filter(item => item.playlist_id !== playlistId));
+      setPlaylistMessage("Playlist deleted.");
+    }
+    setPlaylistSavingId(null);
   }
 
   async function toggleVideoLike(videoId: string) {
@@ -864,11 +1005,32 @@ function App() {
 
   const displayName = (p: Profile | null) => p?.display_name || p?.username || "TUBEXA User";
 
+  function renderAddToPlaylist(videoId: string) {
+    if (!user) return null;
+    return (
+      <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginTop: 10 }}>
+        <select
+          aria-label="Choose playlist"
+          value={playlistSelections[videoId] ?? ""}
+          onChange={event => setPlaylistSelections(current => ({ ...current, [videoId]: event.target.value }))}
+          style={{ flex: "1 1 150px", minWidth: 0, background: "#17171d", color: "#fff", border: "1px solid #39343d", borderRadius: 10, padding: "9px 12px" }}
+        >
+          <option value="">Choose playlist</option>
+          {playlists.map(playlist => <option key={playlist.id} value={playlist.id}>{playlist.name}</option>)}
+        </select>
+        <button className="profile-link" onClick={() => addVideoToPlaylist(videoId)} disabled={!playlists.length || playlistSavingId === videoId}>
+          {playlistSavingId === videoId ? "Adding..." : "＋ Add to Playlist"}
+        </button>
+      </div>
+    );
+  }
+
   function renderVideoComments(videoId: string) {
     const isOpen = commentOpenVideoId === videoId;
     const comments = commentsByVideo[videoId] ?? [];
     return (
       <div className="comments-area">
+        {renderAddToPlaylist(videoId)}
         <button className="profile-link" style={{ marginTop: 10 }} onClick={() => toggleVideoComments(videoId)}>
           {isOpen ? "Hide Comments" : "Comments"}
         </button>
@@ -1102,6 +1264,60 @@ function App() {
                   </div>
                 )}
               </>
+            )}
+
+            {user && (
+              <section style={{ marginTop: 35 }}>
+                <h2 className="section-title">My Playlists</h2>
+                <form onSubmit={createPlaylist} className="panel" style={{ display: "grid", gap: 12, marginBottom: 18 }}>
+                  <input value={playlistName} onChange={event => setPlaylistName(event.target.value)} maxLength={80} placeholder="Playlist name (e.g. My Favorites)" aria-label="Playlist name" required />
+                  <input value={playlistDescription} onChange={event => setPlaylistDescription(event.target.value)} maxLength={300} placeholder="Short description (optional)" aria-label="Playlist description" />
+                  <label style={{ display: "flex", alignItems: "center", gap: 9 }}>
+                    <input type="checkbox" checked={playlistIsPublic} onChange={event => setPlaylistIsPublic(event.target.checked)} />
+                    Make this playlist public
+                  </label>
+                  <button className="primary" type="submit" disabled={playlistSavingId === "create"}>{playlistSavingId === "create" ? "Creating..." : "＋ Create Playlist"}</button>
+                </form>
+                {playlistMessage && <div className="message">{playlistMessage}</div>}
+                {playlistLoading ? <p className="muted">Loading playlists...</p> : playlists.length === 0 ? (
+                  <div className="notice">You have not created a playlist yet. Create one above, then add videos from the video cards.</div>
+                ) : (
+                  <div className="grid">
+                    {playlists.map(playlist => {
+                      const items = playlistItems.filter(item => item.playlist_id === playlist.id);
+                      return (
+                        <article className="card" key={playlist.id}>
+                          <div className="card-info">
+                            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
+                              <h3>{playlist.name}</h3>
+                              <span className="muted">{playlist.is_public ? "Public" : "Private"}</span>
+                            </div>
+                            {playlist.description && <p className="muted">{playlist.description}</p>}
+                            <div className="muted">{items.length} video{items.length === 1 ? "" : "s"}</div>
+                            <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginTop: 10 }}>
+                              <button className="profile-link" onClick={() => togglePlaylistVisibility(playlist)} disabled={playlistSavingId === playlist.id}>{playlist.is_public ? "Make Private" : "Make Public"}</button>
+                              <button className="danger" onClick={() => deletePlaylist(playlist.id)} disabled={playlistSavingId === playlist.id}>Delete Playlist</button>
+                            </div>
+                            {items.length === 0 ? <p className="muted">No videos in this playlist yet.</p> : (
+                              <div style={{ display: "grid", gap: 9, marginTop: 12 }}>
+                                {items.map(item => {
+                                  const video = myVideos.find(entry => entry.id === item.video_id);
+                                  return (
+                                    <div key={item.video_id} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 10, borderTop: "1px solid #39343d", paddingTop: 9 }}>
+                                      <span>{video?.title || "Video unavailable"}</span>
+                                      <button className="comment-delete" onClick={() => removeVideoFromPlaylist(playlist.id, item.video_id)} disabled={playlistSavingId === playlist.id + ":" + item.video_id}>Remove</button>
+                                    </div>
+                                  );
+                                })}
+                              </div>
+                            )}
+                          </div>
+                        </article>
+                      );
+                    })}
+                  </div>
+                )}
+              </section>
             )}
           </section>
           <section className="section">
