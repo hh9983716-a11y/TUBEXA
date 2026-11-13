@@ -37,6 +37,7 @@ type Playlist = {
   description: string;
   is_public: boolean;
   created_at: string;
+  owner_id?: string;
 };
 
 type PlaylistVideo = {
@@ -122,6 +123,7 @@ function App() {
   const [playlistSavingId, setPlaylistSavingId] = useState<string | null>(null);
   const [playlistMessage, setPlaylistMessage] = useState("");
   const [publicPlaylists, setPublicPlaylists] = useState<Playlist[]>([]);
+  const [publicPlaylistOwners, setPublicPlaylistOwners] = useState<Profile[]>([]);
   const [publicPlaylistItems, setPublicPlaylistItems] = useState<PlaylistVideo[]>([]);
   const [publicPlaylistsLoading, setPublicPlaylistsLoading] = useState(false);
   const [openPublicPlaylistId, setOpenPublicPlaylistId] = useState<string | null>(null);
@@ -388,7 +390,7 @@ function App() {
       setPublicPlaylistsLoading(true);
       const { data, error } = await supabase
         .from("playlists")
-        .select("id,name,description,is_public,created_at")
+        .select("id,name,description,is_public,created_at,owner_id")
         .eq("is_public", true)
         .order("created_at", { ascending: false })
         .limit(60);
@@ -402,6 +404,22 @@ function App() {
       }
       const list = (data ?? []) as Playlist[];
       setPublicPlaylists(list);
+      if (list.length) {
+        const ownerIds = [...new Set(list.map(item => item.owner_id).filter(Boolean))] as string[];
+        const { data: owners, error: ownersError } = await supabase
+          .from("profiles")
+          .select("id,username,display_name,avatar_url,cover_url,bio")
+          .in("id", ownerIds);
+        if (!active) return;
+        if (ownersError) {
+          console.error("Could not load public playlist creators:", ownersError.message);
+          setPublicPlaylistOwners([]);
+        } else {
+          setPublicPlaylistOwners((owners ?? []) as Profile[]);
+        }
+      } else {
+        setPublicPlaylistOwners([]);
+      }
       if (!list.length) {
         setPublicPlaylistItems([]);
         setPublicPlaylistsLoading(false);
@@ -1386,6 +1404,10 @@ function App() {
                       <article className="card" key={playlist.id}>
                         <div className="card-info">
                           <h3>{playlist.name}</h3>
+                          {(() => {
+                            const creator = publicPlaylistOwners.find(owner => owner.id === playlist.owner_id);
+                            return creator ? <button className="profile-link" onClick={() => openProfile(creator.id)}>By {creator.display_name || creator.username}</button> : null;
+                          })()}
                           {playlist.description && <p className="muted">{playlist.description}</p>}
                           <div className="muted">{items.length} video{items.length === 1 ? "" : "s"} · Public playlist</div>
                           <button className="profile-link" style={{ marginTop: 10 }} onClick={() => setOpenPublicPlaylistId(expanded ? null : playlist.id)}>
