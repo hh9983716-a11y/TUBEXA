@@ -682,7 +682,7 @@ function App() {
               <div><strong>{subscriberCount}</strong><div className="muted">Subscribers</div></div>
               {user && viewedProfile.id !== user.id ? (
                 <button className="primary" onClick={toggleSubscription} disabled={subscriptionLoading}>
-                  {subscriptionLoading ? "Please wait..." : isSubscribed ? "Subscribed ✓" : "Subscribe"}
+                  {subscriptionLoading ? "Please wait..." : isSubscribed ? "Unsubscribe" : "Subscribe"}
                 </button>
               ) : !user ? (
                 <button className="primary" onClick={() => setPage("auth")}>Login to Subscribe</button>
