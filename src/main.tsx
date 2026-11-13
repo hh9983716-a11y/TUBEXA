@@ -5,6 +5,7 @@ import { supabase } from "./lib/supabase";
 type Video = {
   id: string;
   title: string;
+  category: string;
   owner_id: string;
   storage_path: string;
   content_type: string | null;
@@ -45,6 +46,7 @@ function App() {
   const [searchInput, setSearchInput] = useState("");
   const [search, setSearch] = useState("");
   const [category, setCategory] = useState("All");
+  const [uploadCategory, setUploadCategory] = useState("Entertainment");
   const [youtubeUrl, setYoutubeUrl] = useState("");
   const [videoId, setVideoId] = useState("");
   const [videoFile, setVideoFile] = useState<File | null>(null);
@@ -123,7 +125,7 @@ function App() {
     setLoadingVideos(true);
     const { data, error } = await supabase
       .from("videos")
-      .select("id,title,owner_id,storage_path,content_type,file_size,created_at")
+      .select("id,title,category,owner_id,storage_path,content_type,file_size,created_at")
       .order("created_at", { ascending: false });
 
     if (error) {
@@ -201,7 +203,7 @@ function App() {
     setViewedProfile(data as Profile);
     const { data: videos, error: videosError } = await supabase
       .from("videos")
-      .select("id,title,owner_id,storage_path,content_type,file_size,created_at")
+      .select("id,title,category,owner_id,storage_path,content_type,file_size,created_at")
       .eq("owner_id", profileId)
       .order("created_at", { ascending: false });
 
@@ -637,6 +639,7 @@ function App() {
       const { error: insertError } = await supabase.from("videos").insert({
         owner_id: user.id,
         title: videoFile.name,
+        category: uploadCategory,
         storage_path: path,
         content_type: videoFile.type,
         file_size: videoFile.size,
@@ -698,9 +701,12 @@ function App() {
 
   const filteredVideos = useMemo(() => {
     const query = search.trim().toLowerCase();
-    if (!query) return myVideos;
-    return myVideos.filter(video => (video.title || "").toLowerCase().includes(query));
-  }, [myVideos, search]);
+    return myVideos.filter(video => {
+      const matchesCategory = category === "All" || video.category === category;
+      const matchesSearch = !query || (video.title || "").toLowerCase().includes(query);
+      return matchesCategory && matchesSearch;
+    });
+  }, [myVideos, search, category]);
 
   const myUploadedVideos = useMemo(() => {
     if (!user) return [];
@@ -1055,7 +1061,7 @@ function App() {
           <section className="hero"><div className="tag">TUBEXA VIDEO STUDIO</div><h1>Upload<br /><span>Your Video</span></h1><p className="sub">Upload your video securely to your TUBEXA account.</p></section>
           <section className="section"><div className="panel"><h2 className="section-title">Upload Your Video</h2>
             {!user && <div className="notice">Please log in before uploading videos.</div>}
-            <div className="upload"><div style={{ fontSize: 42 }}>📁</div><h3>Select Your Video</h3><p className="muted">MP4, WebM or MOV · Maximum 50 MB</p><input id="video-upload" type="file" accept="video/mp4,video/webm,video/quicktime" onChange={selectFile} disabled={!user || uploading} />{videoFile && <p style={{ color: "#72e0ad", overflowWrap: "anywhere" }}>Selected: {videoFile.name} ({(videoFile.size / (1024 * 1024)).toFixed(1)} MB)</p>}</div>
+            <div className="upload"><div style={{ fontSize: 42 }}>📁</div><h3>Select Your Video</h3><p className="muted">MP4, WebM or MOV · Maximum 50 MB</p><div className="field"><label htmlFor="video-category">Video Category</label><select id="video-category" value={uploadCategory} onChange={event => setUploadCategory(event.target.value)} disabled={!user || uploading}>{["Gaming", "Music", "Sports", "Kids", "Education", "Entertainment"].map(item => <option key={item} value={item}>{item}</option>)}</select></div><input id="video-upload" type="file" accept="video/mp4,video/webm,video/quicktime" onChange={selectFile} disabled={!user || uploading} />{videoFile && <p style={{ color: "#72e0ad", overflowWrap: "anywhere" }}>Selected: {videoFile.name} ({(videoFile.size / (1024 * 1024)).toFixed(1)} MB)</p>}</div>
             <button className="primary" style={{ width: "100%", marginTop: 20 }} onClick={uploadVideo} disabled={!user || !videoFile || uploading}>{uploading ? "Uploading..." : "Upload Video"}</button>{status && <div className="message">{status}</div>}
           </div></section>
         </main>
