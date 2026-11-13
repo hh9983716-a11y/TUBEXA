@@ -46,6 +46,7 @@ function App() {
   const [searchInput, setSearchInput] = useState("");
   const [search, setSearch] = useState("");
   const [category, setCategory] = useState("All");
+  const [sortBy, setSortBy] = useState("newest");
   const [uploadCategory, setUploadCategory] = useState("Entertainment");
   const [youtubeUrl, setYoutubeUrl] = useState("");
   const [videoId, setVideoId] = useState("");
@@ -739,12 +740,18 @@ function App() {
 
   const filteredVideos = useMemo(() => {
     const query = search.trim().toLowerCase();
-    return myVideos.filter(video => {
+    const matches = myVideos.filter(video => {
       const matchesCategory = category === "All" || video.category === category;
       const matchesSearch = !query || (video.title || "").toLowerCase().includes(query);
       return matchesCategory && matchesSearch;
     });
-  }, [myVideos, search, category]);
+    return [...matches].sort((a, b) => {
+      if (sortBy === "oldest") return new Date(a.created_at).getTime() - new Date(b.created_at).getTime();
+      if (sortBy === "title") return (a.title || "").localeCompare(b.title || "");
+      if (sortBy === "views") return (videoViewCounts[b.id] ?? 0) - (videoViewCounts[a.id] ?? 0);
+      return new Date(b.created_at).getTime() - new Date(a.created_at).getTime();
+    });
+  }, [myVideos, search, category, sortBy, videoViewCounts]);
 
   const myUploadedVideos = useMemo(() => {
     if (!user) return [];
@@ -1029,7 +1036,18 @@ function App() {
           <section className="section">
             <h2 className="section-title">Explore Categories</h2>
             <div className="categories">{["All", "Gaming", "Music", "Sports", "Kids", "Education", "Entertainment"].map(item => <button key={item} className={`chip ${category === item ? "active" : ""}`} onClick={() => setCategory(item)}>{item}</button>)}</div>
-            <h2 className="section-title">Discover Videos</h2>
+            <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12, flexWrap: "wrap" }}>
+              <h2 className="section-title">Discover Videos</h2>
+              <label className="muted" style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                Sort:
+                <select value={sortBy} onChange={event => setSortBy(event.target.value)} aria-label="Sort videos" style={{ background: "#17171d", color: "#fff", border: "1px solid #39343d", borderRadius: 10, padding: "9px 12px" }}>
+                  <option value="newest">Newest first</option>
+                  <option value="oldest">Oldest first</option>
+                  <option value="title">Title A–Z</option>
+                  <option value="views">Most views</option>
+                </select>
+              </label>
+            </div>
             {loadingVideos ? <p className="muted">Loading videos...</p> : filteredVideos.length === 0 ? <div className="notice">{search ? "No videos found. Try another video name." : "No videos available yet."}</div> : (
               <div className="grid">
                 {filteredVideos.map(video => {
