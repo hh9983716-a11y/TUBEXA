@@ -72,8 +72,12 @@ function App() {
 
   const [databaseStatus, setDatabaseStatus] = useState("Checking database connection...");
   const [authMode, setAuthMode] = useState("login");
+  const [authMethod, setAuthMethod] = useState<"email" | "phone">("email");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
+  const [phoneNumber, setPhoneNumber] = useState("");
+  const [phoneOtp, setPhoneOtp] = useState("");
+  const [phoneOtpSent, setPhoneOtpSent] = useState(false);
   const [user, setUser] = useState<any>(null);
   const [authMessage, setAuthMessage] = useState("");
   const [authLoading, setAuthLoading] = useState(false);
@@ -825,15 +829,75 @@ function App() {
     } finally {
       setProfileLoading(false);
     }
-    }  async function handleGoogleLogin() {
+    }
+
+  async function handleOAuthLogin(provider: "google" | "apple") {
     setAuthMessage("");
     setAuthLoading(true);
     const { error } = await supabase.auth.signInWithOAuth({
-      provider: "google",
+      provider,
       options: { redirectTo: window.location.origin },
     });
     if (error) {
       setAuthMessage(error.message);
+      setAuthLoading(false);
+    }
+  }
+
+  async function handleSendPhoneOtp() {
+    setAuthMessage("");
+    const normalizedPhone = phoneNumber.trim().replace(/[\\s()-]/g, "");
+    if (!/^\\+[1-9]\\d{7,14}$/.test(normalizedPhone)) {
+      setAuthMessage("Enter your phone number with country code, for example +923001234567.");
+      return;
+    }
+
+    setAuthLoading(true);
+    try {
+      const { error } = await supabase.auth.signInWithOtp({
+        phone: normalizedPhone,
+        options: { shouldCreateUser: true },
+      });
+      if (error) throw error;
+      setPhoneNumber(normalizedPhone);
+      setPhoneOtpSent(true);
+      setAuthMessage("A verification code has been sent by SMS. Enter the 6-digit code below.");
+    } catch (error: any) {
+      setAuthMessage(error?.message || "Could not send the SMS code. Phone sign-in may need to be enabled in Supabase.");
+    } finally {
+      setAuthLoading(false);
+    }
+  }
+
+  async function handleVerifyPhoneOtp(event: React.FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    setAuthMessage("");
+    const normalizedPhone = phoneNumber.trim().replace(/[\\s()-]/g, "");
+    if (!/^\\+[1-9]\\d{7,14}$/.test(normalizedPhone)) {
+      setAuthMessage("Enter a valid phone number with country code.");
+      return;
+    }
+    if (!/^\\d{6}$/.test(phoneOtp.trim())) {
+      setAuthMessage("Enter the 6-digit SMS verification code.");
+      return;
+    }
+
+    setAuthLoading(true);
+    try {
+      const { data, error } = await supabase.auth.verifyOtp({
+        phone: normalizedPhone,
+        token: phoneOtp.trim(),
+        type: "sms",
+      });
+      if (error) throw error;
+      if (data.user) setUser(data.user);
+      setPage("home");
+      setPhoneOtp("");
+      setPhoneOtpSent(false);
+      setAuthMessage("Phone number verified. You are now logged in.");
+    } catch (error: any) {
+      setAuthMessage(error?.message || "The verification code could not be confirmed.");
+    } finally {
       setAuthLoading(false);
     }
   }
@@ -1222,16 +1286,28 @@ function App() {
           <section className="hero"><div className="tag">WELCOME TO TUBEXA</div><h1>Your Account.<br /><span>Your Video World.</span></h1><p className="sub">Create your account or log in to continue.</p></section>
           <section className="section">
             <div className="panel auth-panel">
-              <h2>{authMode === "signup" ? "Create Account" : "Welcome Back"}</h2>
-              <button type="button" className="google-button" onClick={handleGoogleLogin} disabled={authLoading}><span className="google-icon">G</span>{authLoading ? "Connecting to Google..." : "Continue with Google"}</button>
-              <div className="divider">OR CONTINUE WITH EMAIL</div>
-              <form onSubmit={handleAuth}>
-                <div className="field"><label>Email Address</label><input type="email" value={email} onChange={e => setEmail(e.target.value)} placeholder="Enter your email" required autoComplete="email" /></div>
-                <div className="field"><label>Password</label><input type="password" value={password} onChange={e => setPassword(e.target.value)} placeholder="Enter your password" required minLength={6} autoComplete={authMode === "signup" ? "new-password" : "current-password"} /></div>
-                <button className="primary" type="submit" disabled={authLoading} style={{ width: "100%" }}>{authLoading ? "Please wait..." : authMode === "signup" ? "Create Account" : "Login"}</button>
-              </form>
+              <h2>{authMethod === "phone" ? "Continue with Phone" : authMode === "signup" ? "Create Account" : "Welcome Back"}</h2>
+              <button type="button" className="google-button" onClick={() => handleOAuthLogin("google")} disabled={authLoading}><span className="google-icon">G</span>{authLoading ? "Connecting..." : "Continue with Google"}</button>
+              <button type="button" className="google-button" onClick={() => handleOAuthLogin("apple")} disabled={authLoading}><span aria-hidden="true" style={{ fontSize: 19, color: "#111" }}>●</span>{authLoading ? "Connecting..." : "Continue with Apple"}</button>
+              <button type="button" className="google-button" onClick={() => { setAuthMethod("phone"); setPhoneOtpSent(false); setPhoneOtp(""); setAuthMessage(""); }} disabled={authLoading}>Continue with Phone Number</button>
+              <div className="divider">{authMethod === "phone" ? "PHONE VERIFICATION" : "OR CONTINUE WITH EMAIL"}</div>
+              {authMethod === "phone" ? (
+                <form onSubmit={phoneOtpSent ? handleVerifyPhoneOtp : (event) => { event.preventDefault(); void handleSendPhoneOtp(); }}>
+                  <div className="field"><label>Phone Number (with country code)</label><input type="tel" inputMode="tel" value={phoneNumber} onChange={e => { setPhoneNumber(e.target.value); setPhoneOtpSent(false); setPhoneOtp(""); }} placeholder="+923001234567" required autoComplete="tel" /></div>
+                  {phoneOtpSent && <div className="field"><label>6-digit SMS code</label><input type="text" inputMode="numeric" autoComplete="one-time-code" value={phoneOtp} onChange={e => setPhoneOtp(e.target.value.replace(/\\D/g, "").slice(0, 6))} placeholder="Enter verification code" required maxLength={6} /></div>}
+                  <button className="primary" type="submit" disabled={authLoading} style={{ width: "100%" }}>{authLoading ? "Please wait..." : phoneOtpSent ? "Verify Code & Continue" : "Send SMS Code"}</button>
+                  {phoneOtpSent && <button type="button" className="auth-switch" onClick={() => { setPhoneOtp(""); void handleSendPhoneOtp(); }} disabled={authLoading}>Resend code</button>}
+                  <button type="button" className="auth-switch" onClick={() => { setAuthMethod("email"); setPhoneOtpSent(false); setPhoneOtp(""); setAuthMessage(""); }}>Use email instead</button>
+                </form>
+              ) : (
+                <form onSubmit={handleAuth}>
+                  <div className="field"><label>Email Address</label><input type="email" value={email} onChange={e => setEmail(e.target.value)} placeholder="Enter your email" required autoComplete="email" /></div>
+                  <div className="field"><label>Password</label><input type="password" value={password} onChange={e => setPassword(e.target.value)} placeholder="Enter your password" required minLength={6} autoComplete={authMode === "signup" ? "new-password" : "current-password"} /></div>
+                  <button className="primary" type="submit" disabled={authLoading} style={{ width: "100%" }}>{authLoading ? "Please wait..." : authMode === "signup" ? "Create Account" : "Login"}</button>
+                </form>
+              )}
               {authMessage && <div className="notice">{authMessage}</div>}
-              <div className="auth-actions"><span className="muted">{authMode === "signup" ? "Already have an account?" : "New to TUBEXA?"}</span><button className="auth-switch" onClick={() => { setAuthMode(authMode === "signup" ? "login" : "signup"); setAuthMessage(""); }}>{authMode === "signup" ? "Login" : "Sign Up"}</button></div>
+              {authMethod === "email" && <div className="auth-actions"><span className="muted">{authMode === "signup" ? "Already have an account?" : "New to TUBEXA?"}</span><button className="auth-switch" onClick={() => { setAuthMode(authMode === "signup" ? "login" : "signup"); setAuthMessage(""); }}>{authMode === "signup" ? "Login" : "Sign Up"}</button></div>}
             </div>
           </section>
         </main>
