@@ -73,6 +73,8 @@ function App() {
   const [databaseStatus, setDatabaseStatus] = useState("Checking database connection...");
   const [authMode, setAuthMode] = useState("login");
   const [authMethod, setAuthMethod] = useState<"email" | "phone">("email");
+  const [passwordRecovery, setPasswordRecovery] = useState(false);
+  const [newPassword, setNewPassword] = useState("");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [phoneNumber, setPhoneNumber] = useState("");
@@ -147,7 +149,14 @@ function App() {
 
     loadSession();
     const { data: listener } = supabase.auth.onAuthStateChange(
-      (_event, session) => setUser(session?.user ?? null)
+      (event, session) => {
+        setUser(session?.user ?? null);
+        if (event === "PASSWORD_RECOVERY") {
+          setPasswordRecovery(true);
+          setAuthMessage("Choose a new password for your account.");
+          setPage("auth");
+        }
+      }
     );
     return () => listener.subscription.unsubscribe();
   }, []);
@@ -902,6 +911,49 @@ function App() {
     }
   }
 
+  async function handleForgotPassword() {
+    setAuthMessage("");
+    const address = email.trim();
+    if (!address) {
+      setAuthMessage("Enter your email address first.");
+      return;
+    }
+    setAuthLoading(true);
+    try {
+      const { error } = await supabase.auth.resetPasswordForEmail(address, {
+        redirectTo: window.location.origin,
+      });
+      if (error) throw error;
+      setAuthMessage("If this email is registered, a password reset link has been sent. Check your inbox.");
+    } catch (error: any) {
+      setAuthMessage(error?.message || "Could not send the password reset email.");
+    } finally {
+      setAuthLoading(false);
+    }
+  }
+
+  async function handleUpdatePassword(event: React.FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    setAuthMessage("");
+    if (newPassword.length < 8) {
+      setAuthMessage("Your new password must be at least 8 characters long.");
+      return;
+    }
+    setAuthLoading(true);
+    try {
+      const { error } = await supabase.auth.updateUser({ password: newPassword });
+      if (error) throw error;
+      setNewPassword("");
+      setPasswordRecovery(false);
+      setAuthMessage("Password updated successfully. Your account is ready.");
+      setPage("home");
+    } catch (error: any) {
+      setAuthMessage(error?.message || "Could not update your password. Please request a new reset link.");
+    } finally {
+      setAuthLoading(false);
+    }
+  }
+
   async function handleAuth(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault();
     setAuthMessage("");
@@ -1286,8 +1338,8 @@ function App() {
           <section className="hero"><div className="tag">WELCOME TO TUBEXA</div><h1>Your Account.<br /><span>Your Video World.</span></h1><p className="sub">Create your account or log in to continue.</p></section>
           <section className="section">
             <div className="panel auth-panel">
-              <h2>{authMethod === "phone" ? "Continue with Phone" : authMode === "signup" ? "Create Account" : "Welcome Back"}</h2>
-              <button type="button" className="google-button" onClick={() => handleOAuthLogin("google")} disabled={authLoading}><span className="google-icon">G</span>{authLoading ? "Connecting..." : "Continue with Google"}</button>
+              <h2>{passwordRecovery ? "Set a New Password" : authMethod === "phone" ? "Continue with Phone" : authMode === "signup" ? "Create Account" : "Welcome Back"}</h2>
+              {!passwordRecovery && <><button type="button" className="google-button" onClick={() => handleOAuthLogin("google")} disabled={authLoading}><span className="google-icon">G</span>{authLoading ? "Connecting..." : "Continue with Google"}</button>
               <button type="button" className="google-button" onClick={() => handleOAuthLogin("apple")} disabled={authLoading}><span aria-hidden="true" style={{ fontSize: 19, color: "#111" }}>●</span>{authLoading ? "Connecting..." : "Continue with Apple"}</button>
               <button type="button" className="google-button" onClick={() => { setAuthMethod("phone"); setPhoneOtpSent(false); setPhoneOtp(""); setAuthMessage(""); }} disabled={authLoading}>Continue with Phone Number</button>
               <div className="divider">{authMethod === "phone" ? "PHONE VERIFICATION" : "OR CONTINUE WITH EMAIL"}</div>
@@ -1304,9 +1356,17 @@ function App() {
                   <div className="field"><label>Email Address</label><input type="email" value={email} onChange={e => setEmail(e.target.value)} placeholder="Enter your email" required autoComplete="email" /></div>
                   <div className="field"><label>Password</label><input type="password" value={password} onChange={e => setPassword(e.target.value)} placeholder="Enter your password" required minLength={6} autoComplete={authMode === "signup" ? "new-password" : "current-password"} /></div>
                   <button className="primary" type="submit" disabled={authLoading} style={{ width: "100%" }}>{authLoading ? "Please wait..." : authMode === "signup" ? "Create Account" : "Login"}</button>
+                  {authMode === "login" && <button type="button" className="auth-switch" onClick={handleForgotPassword} disabled={authLoading}>Forgot password?</button>}
                 </form>
               )}
-              {authMessage && <div className="notice">{authMessage}</div>}
+              </>}
+              {passwordRecovery ? (
+                <form onSubmit={handleUpdatePassword}>
+                  <div className="field"><label>New Password</label><input type="password" value={newPassword} onChange={e => setNewPassword(e.target.value)} placeholder="At least 8 characters" minLength={8} required autoComplete="new-password" /></div>
+                  <button className="primary" type="submit" disabled={authLoading} style={{ width: "100%" }}>{authLoading ? "Updating..." : "Update Password"}</button>
+                </form>
+              ) : null}
+                            {authMessage && <div className="notice">{authMessage}</div>}
               {authMethod === "email" && <div className="auth-actions"><span className="muted">{authMode === "signup" ? "Already have an account?" : "New to TUBEXA?"}</span><button className="auth-switch" onClick={() => { setAuthMode(authMode === "signup" ? "login" : "signup"); setAuthMessage(""); }}>{authMode === "signup" ? "Login" : "Sign Up"}</button></div>}
             </div>
           </section>
