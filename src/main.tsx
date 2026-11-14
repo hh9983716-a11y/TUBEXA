@@ -1328,12 +1328,12 @@ function App() {
               <div className="grid">
                 {filteredVideos.map(video => {
                   return <article className="card" key={video.id}>
-                    {playingVideo === video.id && profileVideoUrls[video.id] ? <video className="video-preview" src={profileVideoUrls[video.id]} controls playsInline onPlay={() => { void recordVideoView(video.id); }} /> : <div className="thumb" style={{ background: "#29202c" }}>▶️</div>}
+                    {playingVideo === video.id && videoUrls[video.id] ? <video className="video-preview" src={videoUrls[video.id]} controls playsInline onPlay={() => { void recordVideoView(video.id); }} /> : <div className="thumb" style={{ background: "#29202c" }}>▶️</div>}
                     <div className="card-info">
                       <h3>{video.title}</h3><div className="muted">Views: {videoViewCounts[video.id] ?? 0} · Unique signed-in viewers</div>
                       <div className="muted">{video.file_size ? (video.file_size / (1024 * 1024)).toFixed(1) + " MB" : ""}</div>
                       <button className="profile-link" style={{ marginTop: 10 }} onClick={() => openProfile(video.owner_id)}>View Creator Channel</button>
-                      <div className="video-actions"><button className="primary" disabled={!profileVideoUrls[video.id]} onClick={() => { setPlayingVideo(playingVideo === video.id ? null : video.id); setSettingsVideo(null); }}>{playingVideo === video.id ? "Close Player" : "Play"}</button><button className="profile-link" onClick={() => toggleVideoLike(video.id)} disabled={likeLoading === video.id}>{likeLoading === video.id ? "Please wait..." : likedVideos.includes(video.id) ? "♥ Liked" : "♡ Like"}</button><button className="profile-link" onClick={() => toggleVideoSave(video.id)} disabled={saveLoading === video.id}>{saveLoading === video.id ? "Please wait..." : savedVideoIds.includes(video.id) ? "✓ Saved" : "＋ Save"}</button></div>
+                      <div className="video-actions"><button className="primary" disabled={!videoUrls[video.id]} onClick={() => { setPlayingVideo(playingVideo === video.id ? null : video.id); setSettingsVideo(null); }}>{playingVideo === video.id ? "Close Player" : "Play"}</button><button className="profile-link" onClick={() => toggleVideoLike(video.id)} disabled={likeLoading === video.id}>{likeLoading === video.id ? "Please wait..." : likedVideos.includes(video.id) ? "♥ Liked" : "♡ Like"}</button><button className="profile-link" onClick={() => toggleVideoSave(video.id)} disabled={saveLoading === video.id}>{saveLoading === video.id ? "Please wait..." : savedVideoIds.includes(video.id) ? "✓ Saved" : "＋ Save"}</button></div>
                     </div>
                     {renderVideoComments(video.id)}
                   </article>;
@@ -1344,8 +1344,8 @@ function App() {
             {!user ? <div className="notice">Log in to see and manage your own uploaded videos.</div> : loadingVideos ? <p className="muted">Loading your videos...</p> : myUploadedVideos.length === 0 ? <p className="muted">{search ? "No matching videos in your uploads." : "You have not uploaded any videos yet."}</p> : (
               <div className="grid">
                 {myUploadedVideos.map(video => <article className="card" key={video.id}>
-                  {playingVideo === video.id && profileVideoUrls[video.id] ? <>
-                    <video className="video-preview" src={profileVideoUrls[video.id]} controls playsInline onPlay={() => { void recordVideoView(video.id); }} />
+                  {playingVideo === video.id && videoUrls[video.id] ? <>
+                    <video className="video-preview" src={videoUrls[video.id]} controls playsInline onPlay={() => { void recordVideoView(video.id); }} />
                     <div className="settings-wrap"><button className="settings-button" onClick={() => setSettingsVideo(settingsVideo === video.id ? null : video.id)}>⚙️ Settings</button>
                       {settingsVideo === video.id && <div className="settings-panel"><strong>Audio & Language</strong><label>Audio Track</label><select value={audioMode} onChange={e => setAudioMode(e.target.value)}><option>Original Audio</option><option>AI Dubbing</option></select>
                         {audioMode === "AI Dubbing" && <><label>Dubbing Language</label><select value={dubLanguage} onChange={e => setDubLanguage(e.target.value)}>{languages.map(language => <option key={language}>{language}</option>)}</select><div className="settings-note">AI dubbing engine is not connected yet. Your language preference is selected, but the video's voice will not change until processing is implemented.</div></>}
@@ -1353,7 +1353,7 @@ function App() {
                     </div>
                   </> : <div className="thumb" style={{ background: "#29202c" }}>▶️</div>}
                   <div className="card-info"><h3>{video.title}</h3><div className="muted">Views: {videoViewCounts[video.id] ?? 0} · Unique signed-in viewers</div><div className="muted">{video.file_size ? (video.file_size / (1024 * 1024)).toFixed(1) + " MB" : ""}</div>
-                    <div className="video-actions"><button className="primary" disabled={!profileVideoUrls[video.id]} onClick={() => { setPlayingVideo(playingVideo === video.id ? null : video.id); setSettingsVideo(null); }}>{playingVideo === video.id ? "Close Player" : "Play"}</button><button className="profile-link" onClick={() => toggleVideoLike(video.id)} disabled={likeLoading === video.id}>{likeLoading === video.id ? "Please wait..." : likedVideos.includes(video.id) ? "♥ Liked" : "♡ Like"}</button><button className="profile-link" onClick={() => toggleVideoSave(video.id)} disabled={saveLoading === video.id}>{saveLoading === video.id ? "Please wait..." : savedVideoIds.includes(video.id) ? "✓ Saved" : "＋ Save"}</button><button className="danger" onClick={() => deleteVideo(video)}>Delete</button></div>
+                    <div className="video-actions"><button className="primary" disabled={!videoUrls[video.id]} onClick={() => { setPlayingVideo(playingVideo === video.id ? null : video.id); setSettingsVideo(null); }}>{playingVideo === video.id ? "Close Player" : "Play"}</button><button className="profile-link" onClick={() => toggleVideoLike(video.id)} disabled={likeLoading === video.id}>{likeLoading === video.id ? "Please wait..." : likedVideos.includes(video.id) ? "♥ Liked" : "♡ Like"}</button><button className="profile-link" onClick={() => toggleVideoSave(video.id)} disabled={saveLoading === video.id}>{saveLoading === video.id ? "Please wait..." : savedVideoIds.includes(video.id) ? "✓ Saved" : "＋ Save"}</button><button className="danger" onClick={() => deleteVideo(video)}>Delete</button></div>
                   </div>
                   {renderVideoComments(video.id)}
                 </article>)}
@@ -1370,7 +1370,7 @@ function App() {
                         <div className="thumb">▶️</div>
                         <div className="card-info">
                           <h3>{video.title}</h3><div className="muted">Views: {videoViewCounts[video.id] ?? 0} · Unique signed-in viewers</div>
-                          <button className="primary" disabled={!profileVideoUrls[video.id]} onClick={() => setPlayingVideo(video.id)}>Play</button>
+                          <button className="primary" disabled={!videoUrls[video.id]} onClick={() => setPlayingVideo(video.id)}>Play</button>
                           <button className="profile-link" style={{ marginTop: 10 }} onClick={() => toggleVideoSave(video.id)} disabled={saveLoading === video.id}>Remove from Watch Later</button>
                         </div>
                       </article>
@@ -1420,7 +1420,7 @@ function App() {
                                     <div key={item.video_id} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 10, borderTop: "1px solid #39343d", paddingTop: 9, flexWrap: "wrap" }}>
                                       <span>{video?.title || "Video unavailable"}</span>
                                       <div style={{ display: "flex", gap: 7, alignItems: "center" }}>
-                                        {video && profileVideoUrls[video.id] && <button className="primary" onClick={() => { setPlayingVideo(playingVideo === video.id ? null : video.id); setSettingsVideo(null); }}>{playingVideo === video.id ? "Close Player" : "Play"}</button>}
+                                        {video && videoUrls[video.id] && <button className="primary" onClick={() => { setPlayingVideo(playingVideo === video.id ? null : video.id); setSettingsVideo(null); }}>{playingVideo === video.id ? "Close Player" : "Play"}</button>}
                                         <button className="comment-delete" onClick={() => removeVideoFromPlaylist(playlist.id, item.video_id)} disabled={playlistSavingId === playlist.id + ":" + item.video_id}>Remove</button>
                                       </div>
                                     </div>
