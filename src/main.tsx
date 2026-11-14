@@ -855,8 +855,8 @@ function App() {
 
   async function handleSendPhoneOtp() {
     setAuthMessage("");
-    const normalizedPhone = phoneNumber.trim().replace(/[\\s()-]/g, "");
-    if (!/^\\+[1-9]\\d{7,14}$/.test(normalizedPhone)) {
+    const normalizedPhone = phoneNumber.trim().replace(/[\s()-]/g, "");
+    if (!/^\+[1-9]\d{7,14}$/.test(normalizedPhone)) {
       setAuthMessage("Enter your phone number with country code, for example +923001234567.");
       return;
     }
@@ -881,12 +881,12 @@ function App() {
   async function handleVerifyPhoneOtp(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault();
     setAuthMessage("");
-    const normalizedPhone = phoneNumber.trim().replace(/[\\s()-]/g, "");
-    if (!/^\\+[1-9]\\d{7,14}$/.test(normalizedPhone)) {
+    const normalizedPhone = phoneNumber.trim().replace(/[\s()-]/g, "");
+    if (!/^\+[1-9]\d{7,14}$/.test(normalizedPhone)) {
       setAuthMessage("Enter a valid phone number with country code.");
       return;
     }
-    if (!/^\\d{6}$/.test(phoneOtp.trim())) {
+    if (!/^\d{6}$/.test(phoneOtp.trim())) {
       setAuthMessage("Enter the 6-digit SMS verification code.");
       return;
     }
@@ -1346,7 +1346,7 @@ function App() {
               {authMethod === "phone" ? (
                 <form onSubmit={phoneOtpSent ? handleVerifyPhoneOtp : (event) => { event.preventDefault(); void handleSendPhoneOtp(); }}>
                   <div className="field"><label>Phone Number (with country code)</label><input type="tel" inputMode="tel" value={phoneNumber} onChange={e => { setPhoneNumber(e.target.value); setPhoneOtpSent(false); setPhoneOtp(""); }} placeholder="+923001234567" required autoComplete="tel" /></div>
-                  {phoneOtpSent && <div className="field"><label>6-digit SMS code</label><input type="text" inputMode="numeric" autoComplete="one-time-code" value={phoneOtp} onChange={e => setPhoneOtp(e.target.value.replace(/\\D/g, "").slice(0, 6))} placeholder="Enter verification code" required maxLength={6} /></div>}
+                  {phoneOtpSent && <div className="field"><label>6-digit SMS code</label><input type="text" inputMode="numeric" autoComplete="one-time-code" value={phoneOtp} onChange={e => setPhoneOtp(e.target.value.replace(/\D/g, "").slice(0, 6))} placeholder="Enter verification code" required maxLength={6} /></div>}
                   <button className="primary" type="submit" disabled={authLoading} style={{ width: "100%" }}>{authLoading ? "Please wait..." : phoneOtpSent ? "Verify Code & Continue" : "Send SMS Code"}</button>
                   {phoneOtpSent && <button type="button" className="auth-switch" onClick={() => { setPhoneOtp(""); void handleSendPhoneOtp(); }} disabled={authLoading}>Resend code</button>}
                   <button type="button" className="auth-switch" onClick={() => { setAuthMethod("email"); setPhoneOtpSent(false); setPhoneOtp(""); setAuthMessage(""); }}>Use email instead</button>
