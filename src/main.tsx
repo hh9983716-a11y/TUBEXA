@@ -811,14 +811,14 @@ function App() {
 
       const { data, error } = await supabase
         .from("profiles")
-        .update({
+        .upsert({
+          id: user.id,
           username,
           display_name: displayName,
           bio,
           avatar_url: avatarUrl,
           cover_url: coverUrl,
-        })
-        .eq("id", user.id)
+        }, { onConflict: "id" })
         .select("id,username,display_name,avatar_url,cover_url,bio")
         .single();
 
