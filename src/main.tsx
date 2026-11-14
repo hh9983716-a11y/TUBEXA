@@ -1367,7 +1367,7 @@ function App() {
                 </form>
               ) : null}
                             {authMessage && <div className="notice">{authMessage}</div>}
-              {authMethod === "email" && <div className="auth-actions"><span className="muted">{authMode === "signup" ? "Already have an account?" : "New to TUBEXA?"}</span><button className="auth-switch" onClick={() => { setAuthMode(authMode === "signup" ? "login" : "signup"); setAuthMessage(""); }}>{authMode === "signup" ? "Login" : "Sign Up"}</button></div>}
+              {!passwordRecovery && authMethod === "email" && <div className="auth-actions"><span className="muted">{authMode === "signup" ? "Already have an account?" : "New to TUBEXA?"}</span><button className="auth-switch" onClick={() => { setAuthMode(authMode === "signup" ? "login" : "signup"); setAuthMessage(""); }}>{authMode === "signup" ? "Login" : "Sign Up"}</button></div>}
             </div>
           </section>
         </main>
