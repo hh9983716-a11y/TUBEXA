@@ -1367,10 +1367,10 @@ function App() {
                   <div className="grid">
                     {savedVideos.map(video => (
                       <article className="card" key={video.id}>
-                        <div className="thumb">▶️</div>
+                        {playingVideo === video.id && videoUrls[video.id] ? <video className="video-preview" src={videoUrls[video.id]} controls playsInline onPlay={() => { void recordVideoView(video.id); }} /> : <div className="thumb">▶️</div>}
                         <div className="card-info">
                           <h3>{video.title}</h3><div className="muted">Views: {videoViewCounts[video.id] ?? 0} · Unique signed-in viewers</div>
-                          <button className="primary" disabled={!videoUrls[video.id]} onClick={() => setPlayingVideo(video.id)}>Play</button>
+                          <button className="primary" disabled={!videoUrls[video.id]} onClick={() => setPlayingVideo(playingVideo === video.id ? null : video.id)}>{playingVideo === video.id ? "Close Player" : "Play"}</button>
                           <button className="profile-link" style={{ marginTop: 10 }} onClick={() => toggleVideoSave(video.id)} disabled={saveLoading === video.id}>Remove from Watch Later</button>
                         </div>
                       </article>
@@ -1417,12 +1417,15 @@ function App() {
                                 {items.map(item => {
                                   const video = myVideos.find(entry => entry.id === item.video_id);
                                   return (
-                                    <div key={item.video_id} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 10, borderTop: "1px solid #39343d", paddingTop: 9, flexWrap: "wrap" }}>
-                                      <span>{video?.title || "Video unavailable"}</span>
-                                      <div style={{ display: "flex", gap: 7, alignItems: "center" }}>
-                                        {video && videoUrls[video.id] && <button className="primary" onClick={() => { setPlayingVideo(playingVideo === video.id ? null : video.id); setSettingsVideo(null); }}>{playingVideo === video.id ? "Close Player" : "Play"}</button>}
-                                        <button className="comment-delete" onClick={() => removeVideoFromPlaylist(playlist.id, item.video_id)} disabled={playlistSavingId === playlist.id + ":" + item.video_id}>Remove</button>
+                                    <div key={item.video_id} style={{ display: "grid", gap: 8, borderTop: "1px solid #39343d", paddingTop: 9 }}>
+                                      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
+                                        <span>{video?.title || "Video unavailable"}</span>
+                                        <div style={{ display: "flex", gap: 7, alignItems: "center" }}>
+                                          {video && videoUrls[video.id] && <button className="primary" onClick={() => { setPlayingVideo(playingVideo === video.id ? null : video.id); setSettingsVideo(null); }}>{playingVideo === video.id ? "Close Player" : "Play"}</button>}
+                                          <button className="comment-delete" onClick={() => removeVideoFromPlaylist(playlist.id, item.video_id)} disabled={playlistSavingId === playlist.id + ":" + item.video_id}>Remove</button>
+                                        </div>
                                       </div>
+                                      {video && videoUrls[video.id] && playingVideo === video.id && <video className="video-preview" src={videoUrls[video.id]} controls playsInline onPlay={() => { void recordVideoView(video.id); }} />}
                                     </div>
                                   );
                                 })}
