@@ -1662,7 +1662,7 @@ function App() {
                   <div className="grid">
                     {savedVideos.map(video => (
                       <article className="card" key={video.id}>
-                        {playingVideo === video.id && videoUrls[video.id] ? <video className="video-preview" src={videoUrls[video.id]} controls playsInline onPlay={() => handleVideoPlaybackStart(video.id)} onError={() => { void refreshVideoPlaybackUrl(video, "profile"); }} /> : <div className="thumb">▶️</div>}
+                        {playingVideo === video.id && videoUrls[video.id] ? <video className="video-preview" src={videoUrls[video.id]} controls playsInline onPlay={() => handleVideoPlaybackStart(video.id)} onError={() => { void refreshVideoPlaybackUrl(video, "main"); }} /> : <div className="thumb">▶️</div>}
                         <div className="card-info">
                           <h3>{video.title}</h3><div className="muted">Views: {videoViewCounts[video.id] ?? 0} · Unique signed-in viewers</div>
                           <button className="primary" disabled={!videoUrls[video.id]} onClick={() => setPlayingVideo(playingVideo === video.id ? null : video.id)}>{playingVideo === video.id ? "Close Player" : "Play"}</button>
@@ -1774,7 +1774,7 @@ function App() {
                                       ) : <span className="muted">Unavailable</span>}
                                     </div>
                                     {video && videoUrl && playingVideo === video.id && (
-                                      <video className="video-preview" src={videoUrl} controls playsInline onPlay={() => handleVideoPlaybackStart(video.id)} onError={() => { void refreshVideoPlaybackUrl(video, "main"); }} />
+                                      <video className="video-preview" src={videoUrl} controls playsInline onPlay={() => handleVideoPlaybackStart(video.id)} onError={() => { void refreshVideoPlaybackUrl(video, "publicPlaylist"); }} />
                                     )}
                                   </div>
                                 );
