@@ -589,8 +589,13 @@ function App() {
     setLikeLoading(videoId);
     try {
       if (likedVideos.includes(videoId)) {
-        const { error } = await supabase.from("video_likes").delete().eq("video_id", videoId).eq("user_id", user.id);
+        const { data: deletedRows, error } = await supabase.from("video_likes")
+          .delete()
+          .eq("video_id", videoId)
+          .eq("user_id", user.id)
+          .select("video_id");
         if (error) throw error;
+        if (!deletedRows?.length) throw new Error("Like status changed elsewhere. Please refresh and try again.");
         setLikedVideos(current => current.filter(id => id !== videoId));
       } else {
         const { error } = await supabase.from("video_likes").insert({ video_id: videoId, user_id: user.id });
@@ -610,10 +615,13 @@ function App() {
     setSaveLoading(videoId);
     try {
       if (savedVideoIds.includes(videoId)) {
-        const { error } = await supabase.from("video_saves").delete()
+        const { data: deletedRows, error } = await supabase.from("video_saves")
+          .delete()
           .eq("video_id", videoId)
-          .eq("user_id", user.id);
+          .eq("user_id", user.id)
+          .select("video_id");
         if (error) throw error;
+        if (!deletedRows?.length) throw new Error("Saved status changed elsewhere. Please refresh and try again.");
         setSavedVideoIds(current => current.filter(id => id !== videoId));
       } else {
         const { error } = await supabase.from("video_saves").insert({
@@ -720,13 +728,22 @@ function App() {
   async function deleteVideoComment(commentId: string, videoId: string) {
     if (!user) return;
     setCommentMessages(current => ({ ...current, [videoId]: "" }));
-    const { error } = await supabase
+    const { data: deletedRows, error } = await supabase
       .from("video_comments")
       .delete()
       .eq("id", commentId)
-      .eq("author_id", user.id);
+      .eq("author_id", user.id)
+      .select("id");
     if (error) {
       setCommentMessages(current => ({ ...current, [videoId]: error.message }));
+      return;
+    }
+    if (!deletedRows?.length) {
+      setCommentMessages(current => ({
+        ...current,
+        [videoId]: "This comment was already removed or you do not have permission to delete it.",
+      }));
+      await loadVideoComments(videoId);
       return;
     }
     setCommentsByVideo(current => ({
