@@ -1082,18 +1082,45 @@ function App() {
     if (!window.confirm(`Delete "${video.title}"?`)) return;
 
     setStatus("Deleting video...");
-    const { error: storageError } = await supabase.storage.from(STORAGE_BUCKET).remove([video.storage_path]);
-    if (storageError) {
-      setStatus("Could not delete video: " + storageError.message);
-      return;
-    }
-    const { error: dbError } = await supabase.from("videos").delete().eq("id", video.id).eq("owner_id", user.id);
+
+    // Remove the database row first so a failed storage cleanup never leaves
+    // a visible video record pointing to a missing file.
+    const { data: deletedRows, error: dbError } = await supabase
+      .from("videos")
+      .delete()
+      .eq("id", video.id)
+      .eq("owner_id", user.id)
+      .select("id");
+
     if (dbError) {
-      setStatus("File deleted, but database record could not be deleted: " + dbError.message);
+      setStatus("Could not delete video: " + dbError.message);
       return;
     }
+    if (!deletedRows?.length) {
+      setStatus("The video was not found or you do not have permission to delete it.");
+      await loadMyVideos();
+      return;
+    }
+
+    setMyVideos(current => current.filter(item => item.id !== video.id));
+    setVideoUrls(current => {
+      const next = { ...current };
+      delete next[video.id];
+      return next;
+    });
     setPlayingVideo(null);
     setSettingsVideo(null);
+
+    const { error: storageError } = await supabase.storage
+      .from(STORAGE_BUCKET)
+      .remove([video.storage_path]);
+
+    if (storageError) {
+      setStatus("Video record deleted, but its storage file could not be cleaned up: " + storageError.message);
+      await loadMyVideos();
+      return;
+    }
+
     setStatus("Video deleted successfully.");
     await loadMyVideos();
   }
