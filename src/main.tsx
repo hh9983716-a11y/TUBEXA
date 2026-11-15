@@ -86,6 +86,7 @@ function App() {
 
   const [myVideos, setMyVideos] = useState<Video[]>([]);
   const [videoUrls, setVideoUrls] = useState<Record<string, string>>({});
+  const [videoUrlRetryIds, setVideoUrlRetryIds] = useState<string[]>([]);
   const [loadingVideos, setLoadingVideos] = useState(false);
   const [playingVideo, setPlayingVideo] = useState<string | null>(null);
   const [settingsVideo, setSettingsVideo] = useState<string | null>(null);
@@ -356,6 +357,33 @@ function App() {
     loadVideoViewCounts();
     return () => { active = false; };
   }, [myVideos]);
+
+  async function refreshVideoPlaybackUrl(video: Video, scope: "main" | "profile" | "publicPlaylist") {
+    if (!video.storage_path || videoUrlRetryIds.includes(video.id)) return;
+    setVideoUrlRetryIds(current => current.includes(video.id) ? current : [...current, video.id]);
+    try {
+      const { data, error } = await supabase.storage
+        .from(STORAGE_BUCKET)
+        .createSignedUrl(video.storage_path, 3600);
+      if (error || !data?.signedUrl) {
+        console.error("Could not refresh video playback URL:", video.id, error?.message);
+        setStatus("This video link expired and could not be refreshed. Please reload the page and try again.");
+        return;
+      }
+      const updateUrls = (current: Record<string, string>) => ({ ...current, [video.id]: data.signedUrl });
+      if (scope === "profile") setProfileVideoUrls(updateUrls);
+      else if (scope === "publicPlaylist") setPublicPlaylistVideoUrls(updateUrls);
+      else setVideoUrls(updateUrls);
+    } catch (error) {
+      console.error("Video playback URL refresh failed:", error);
+      setStatus("Could not refresh this video link. Please reload the page and try again.");
+    }
+  }
+
+  function handleVideoPlaybackStart(videoId: string) {
+    setVideoUrlRetryIds(current => current.filter(id => id !== videoId));
+    void recordVideoView(videoId);
+  }
 
   async function recordVideoView(videoId: string) {
     if (!user) return;
@@ -1558,7 +1586,7 @@ function App() {
               <div className="grid">
                 {profileVideos.map(video => (
                   <article className="card" key={video.id}>
-                    {playingVideo === video.id && profileVideoUrls[video.id] ? <video className="video-preview" src={profileVideoUrls[video.id]} controls playsInline onPlay={() => { void recordVideoView(video.id); }} /> : <div className="thumb">▶️</div>}
+                    {playingVideo === video.id && profileVideoUrls[video.id] ? <video className="video-preview" src={profileVideoUrls[video.id]} controls playsInline onPlay={() => handleVideoPlaybackStart(video.id)} onError={() => { void refreshVideoPlaybackUrl(video, "profile"); }} /> : <div className="thumb">▶️</div>}
                     <div className="card-info"><h3>{video.title}</h3><div className="muted">Views: {videoViewCounts[video.id] ?? 0} · Unique signed-in viewers</div><button className="primary" disabled={!profileVideoUrls[video.id]} onClick={() => setPlayingVideo(playingVideo === video.id ? null : video.id)}>{playingVideo === video.id ? "Close Player" : "Play"}</button><button className="profile-link" style={{ marginTop: 10 }} onClick={() => toggleVideoLike(video.id)} disabled={likeLoading === video.id}>{likeLoading === video.id ? "Please wait..." : likedVideos.includes(video.id) ? "♥ Liked" : "♡ Like"}</button><button className="profile-link" style={{ marginTop: 10 }} onClick={() => toggleVideoSave(video.id)} disabled={saveLoading === video.id}>{saveLoading === video.id ? "Please wait..." : savedVideoIds.includes(video.id) ? "✓ Saved" : "＋ Save"}</button></div>
                     {renderVideoComments(video.id)}
                   </article>
@@ -1595,7 +1623,7 @@ function App() {
               <div className="grid">
                 {filteredVideos.map(video => {
                   return <article className="card" key={video.id}>
-                    {playingVideo === video.id && videoUrls[video.id] ? <video className="video-preview" src={videoUrls[video.id]} controls playsInline onPlay={() => { void recordVideoView(video.id); }} /> : <div className="thumb" style={{ background: "#29202c" }}>▶️</div>}
+                    {playingVideo === video.id && videoUrls[video.id] ? <video className="video-preview" src={videoUrls[video.id]} controls playsInline onPlay={() => handleVideoPlaybackStart(video.id)} onError={() => { void refreshVideoPlaybackUrl(video, "main"); }} /> : <div className="thumb" style={{ background: "#29202c" }}>▶️</div>}
                     <div className="card-info">
                       <h3>{video.title}</h3><div className="muted">Views: {videoViewCounts[video.id] ?? 0} · Unique signed-in viewers</div>
                       <div className="muted">{video.file_size ? (video.file_size / (1024 * 1024)).toFixed(1) + " MB" : ""}</div>
@@ -1612,7 +1640,7 @@ function App() {
               <div className="grid">
                 {myUploadedVideos.map(video => <article className="card" key={video.id}>
                   {playingVideo === video.id && videoUrls[video.id] ? <>
-                    <video className="video-preview" src={videoUrls[video.id]} controls playsInline onPlay={() => { void recordVideoView(video.id); }} />
+                    <video className="video-preview" src={videoUrls[video.id]} controls playsInline onPlay={() => handleVideoPlaybackStart(video.id)} onError={() => { void refreshVideoPlaybackUrl(video, "main"); }} />
                     <div className="settings-wrap"><button className="settings-button" onClick={() => setSettingsVideo(settingsVideo === video.id ? null : video.id)}>⚙️ Settings</button>
                       {settingsVideo === video.id && <div className="settings-panel"><strong>Audio & Language</strong><label>Audio Track</label><select value={audioMode} onChange={e => setAudioMode(e.target.value)}><option>Original Audio</option><option>AI Dubbing</option></select>
                         {audioMode === "AI Dubbing" && <><label>Dubbing Language</label><select value={dubLanguage} onChange={e => setDubLanguage(e.target.value)}>{languages.map(language => <option key={language}>{language}</option>)}</select><div className="settings-note">AI dubbing engine is not connected yet. Your language preference is selected, but the video's voice will not change until processing is implemented.</div></>}
@@ -1634,7 +1662,7 @@ function App() {
                   <div className="grid">
                     {savedVideos.map(video => (
                       <article className="card" key={video.id}>
-                        {playingVideo === video.id && videoUrls[video.id] ? <video className="video-preview" src={videoUrls[video.id]} controls playsInline onPlay={() => { void recordVideoView(video.id); }} /> : <div className="thumb">▶️</div>}
+                        {playingVideo === video.id && videoUrls[video.id] ? <video className="video-preview" src={videoUrls[video.id]} controls playsInline onPlay={() => handleVideoPlaybackStart(video.id)} onError={() => { void refreshVideoPlaybackUrl(video, "profile"); }} /> : <div className="thumb">▶️</div>}
                         <div className="card-info">
                           <h3>{video.title}</h3><div className="muted">Views: {videoViewCounts[video.id] ?? 0} · Unique signed-in viewers</div>
                           <button className="primary" disabled={!videoUrls[video.id]} onClick={() => setPlayingVideo(playingVideo === video.id ? null : video.id)}>{playingVideo === video.id ? "Close Player" : "Play"}</button>
@@ -1692,7 +1720,7 @@ function App() {
                                           <button className="comment-delete" onClick={() => removeVideoFromPlaylist(playlist.id, item.video_id)} disabled={playlistSavingId === playlist.id + ":" + item.video_id}>Remove</button>
                                         </div>
                                       </div>
-                                      {video && videoUrls[video.id] && playingVideo === video.id && <video className="video-preview" src={videoUrls[video.id]} controls playsInline onPlay={() => { void recordVideoView(video.id); }} />}
+                                      {video && videoUrls[video.id] && playingVideo === video.id && <video className="video-preview" src={videoUrls[video.id]} controls playsInline onPlay={() => handleVideoPlaybackStart(video.id)} onError={() => { void refreshVideoPlaybackUrl(video, "main"); }} />}
                                     </div>
                                   );
                                 })}
@@ -1746,7 +1774,7 @@ function App() {
                                       ) : <span className="muted">Unavailable</span>}
                                     </div>
                                     {video && videoUrl && playingVideo === video.id && (
-                                      <video className="video-preview" src={videoUrl} controls playsInline onPlay={() => { void recordVideoView(video.id); }} />
+                                      <video className="video-preview" src={videoUrl} controls playsInline onPlay={() => handleVideoPlaybackStart(video.id)} onError={() => { void refreshVideoPlaybackUrl(video, "main"); }} />
                                     )}
                                   </div>
                                 );
