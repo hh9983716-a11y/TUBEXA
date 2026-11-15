@@ -533,54 +533,106 @@ function App() {
     if (!playlistId) { setPlaylistMessage("Choose a playlist first."); return; }
     setPlaylistSavingId(videoId);
     setPlaylistMessage("");
-    const nextPosition = playlistItems.filter(item => item.playlist_id === playlistId).length;
-    const { error } = await supabase.from("playlist_videos").insert({ playlist_id: playlistId, video_id: videoId, position: nextPosition });
-    if (error?.code === "23505") setPlaylistMessage("This video is already in that playlist.");
-    else if (error) setPlaylistMessage("Could not add video: " + error.message);
-    else {
-      setPlaylistMessage("Video added to playlist.");
-      await refreshPlaylists();
+    const selectedPlaylist = playlists.find(item => item.id === playlistId && item.owner_id === user.id);
+    if (!selectedPlaylist) {
+      setPlaylistMessage("That playlist is unavailable. Refresh your playlists and try again.");
+      return;
     }
-    setPlaylistSavingId(null);
+    const highestPosition = playlistItems
+      .filter(item => item.playlist_id === playlistId)
+      .reduce((highest, item) => Math.max(highest, item.position), -1);
+    const nextPosition = highestPosition + 1;
+    try {
+      const { error } = await supabase.from("playlist_videos").insert({
+        playlist_id: playlistId,
+        video_id: videoId,
+        position: nextPosition,
+      });
+      if (error?.code === "23505") setPlaylistMessage("This video is already in that playlist, or the list changed. Refresh and try again.");
+      else if (error) setPlaylistMessage("Could not add video: " + error.message);
+      else {
+        setPlaylistMessage("Video added to playlist.");
+        await refreshPlaylists();
+      }
+    } catch (error: any) {
+      setPlaylistMessage("Could not add video: " + (error?.message || "Please try again."));
+    } finally {
+      setPlaylistSavingId(null);
+    }
   }
 
   async function removeVideoFromPlaylist(playlistId: string, videoId: string) {
     const key = playlistId + ":" + videoId;
     setPlaylistSavingId(key);
-    const { error } = await supabase.from("playlist_videos")
-      .delete().eq("playlist_id", playlistId).eq("video_id", videoId);
-    if (error) setPlaylistMessage("Could not remove video: " + error.message);
-    else {
-      setPlaylistItems(current => current.filter(item => !(item.playlist_id === playlistId && item.video_id === videoId)));
-      setPlaylistMessage("Video removed from playlist.");
+    try {
+      const { data: deletedRows, error } = await supabase.from("playlist_videos")
+        .delete()
+        .eq("playlist_id", playlistId)
+        .eq("video_id", videoId)
+        .select("video_id");
+      if (error) setPlaylistMessage("Could not remove video: " + error.message);
+      else if (!deletedRows?.length) {
+        setPlaylistMessage("This video was already removed from the playlist.");
+        await refreshPlaylists();
+      } else {
+        setPlaylistItems(current => current.filter(item => !(item.playlist_id === playlistId && item.video_id === videoId)));
+        setPlaylistMessage("Video removed from playlist.");
+      }
+    } catch (error: any) {
+      setPlaylistMessage("Could not remove video: " + (error?.message || "Please try again."));
+    } finally {
+      setPlaylistSavingId(null);
     }
-    setPlaylistSavingId(null);
   }
 
   async function togglePlaylistVisibility(playlist: Playlist) {
+    if (!user || playlist.owner_id !== user.id) return;
     setPlaylistSavingId(playlist.id);
-    const { error } = await supabase.from("playlists")
-      .update({ is_public: !playlist.is_public, updated_at: new Date().toISOString() })
-      .eq("id", playlist.id).eq("owner_id", user.id);
-    if (error) setPlaylistMessage("Could not update playlist: " + error.message);
-    else {
-      setPlaylists(current => current.map(item => item.id === playlist.id ? { ...item, is_public: !item.is_public } : item));
-      setPlaylistMessage(playlist.is_public ? "Playlist is now private." : "Playlist is now public.");
+    try {
+      const { data: updatedRows, error } = await supabase.from("playlists")
+        .update({ is_public: !playlist.is_public, updated_at: new Date().toISOString() })
+        .eq("id", playlist.id)
+        .eq("owner_id", user.id)
+        .select("id");
+      if (error) setPlaylistMessage("Could not update playlist: " + error.message);
+      else if (!updatedRows?.length) {
+        setPlaylistMessage("Playlist could not be found or is no longer yours. Refresh and try again.");
+        await refreshPlaylists();
+      } else {
+        setPlaylists(current => current.map(item => item.id === playlist.id ? { ...item, is_public: !item.is_public } : item));
+        setPlaylistMessage(playlist.is_public ? "Playlist is now private." : "Playlist is now public.");
+      }
+    } catch (error: any) {
+      setPlaylistMessage("Could not update playlist: " + (error?.message || "Please try again."));
+    } finally {
+      setPlaylistSavingId(null);
     }
-    setPlaylistSavingId(null);
   }
 
   async function deletePlaylist(playlistId: string) {
     if (!window.confirm("Delete this playlist? Its saved list will also be removed.")) return;
+    if (!user) return;
     setPlaylistSavingId(playlistId);
-    const { error } = await supabase.from("playlists").delete().eq("id", playlistId).eq("owner_id", user.id);
-    if (error) setPlaylistMessage("Could not delete playlist: " + error.message);
-    else {
-      setPlaylists(current => current.filter(item => item.id !== playlistId));
-      setPlaylistItems(current => current.filter(item => item.playlist_id !== playlistId));
-      setPlaylistMessage("Playlist deleted.");
+    try {
+      const { data: deletedRows, error } = await supabase.from("playlists")
+        .delete()
+        .eq("id", playlistId)
+        .eq("owner_id", user.id)
+        .select("id");
+      if (error) setPlaylistMessage("Could not delete playlist: " + error.message);
+      else if (!deletedRows?.length) {
+        setPlaylistMessage("Playlist was already deleted or you do not have permission to delete it.");
+        await refreshPlaylists();
+      } else {
+        setPlaylists(current => current.filter(item => item.id !== playlistId));
+        setPlaylistItems(current => current.filter(item => item.playlist_id !== playlistId));
+        setPlaylistMessage("Playlist deleted.");
+      }
+    } catch (error: any) {
+      setPlaylistMessage("Could not delete playlist: " + (error?.message || "Please try again."));
+    } finally {
+      setPlaylistSavingId(null);
     }
-    setPlaylistSavingId(null);
   }
 
   async function toggleVideoLike(videoId: string) {
