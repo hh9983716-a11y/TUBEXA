@@ -1045,39 +1045,64 @@ function App() {
     }
     if (uploading) return;
 
+    const file = videoFile;
+    const allowedTypes = ["video/mp4", "video/webm", "video/quicktime"];
+    if (!allowedTypes.includes(file.type)) {
+      setStatus("Please select an MP4, WebM or MOV video.");
+      return;
+    }
+    if (file.size > MAX_FILE_SIZE) {
+      setStatus("Video must be 50 MB or smaller.");
+      return;
+    }
+    if (file.size === 0) {
+      setStatus("The selected video file is empty. Please choose another file.");
+      return;
+    }
+
     setUploading(true);
-    setStatus("Uploading your video...");
-    const safeName = videoFile.name.replace(/[^a-zA-Z0-9._-]/g, "_").slice(-100);
+    setStatus("Uploading video file...");
+    const safeName = file.name.replace(/[^a-zA-Z0-9._-]/g, "_").slice(-100);
     const path = `${user.id}/${crypto.randomUUID()}-${safeName}`;
+    let storageUploaded = false;
 
     try {
       const { error: uploadError } = await supabase.storage
         .from(STORAGE_BUCKET)
-        .upload(path, videoFile, { contentType: videoFile.type, upsert: false });
+        .upload(path, file, { contentType: file.type, upsert: false });
       if (uploadError) throw uploadError;
+      storageUploaded = true;
 
+      setStatus("Video file uploaded. Saving video details...");
       const { error: insertError } = await supabase.from("videos").insert({
         owner_id: user.id,
-        title: videoFile.name,
+        title: file.name,
         category: uploadCategory,
         storage_path: path,
-        content_type: videoFile.type,
-        file_size: videoFile.size,
+        content_type: file.type,
+        file_size: file.size,
       });
-
-      if (insertError) {
-        await supabase.storage.from(STORAGE_BUCKET).remove([path]);
-        throw insertError;
-      }
+      if (insertError) throw insertError;
 
       setVideoFile(null);
       const input = document.getElementById("video-upload") as HTMLInputElement | null;
       if (input) input.value = "";
       setStatus("Video uploaded successfully!");
       await loadMyVideos();
-    } catch (error: any) {
+    } catch (error: unknown) {
       console.error("Upload error:", error);
-      setStatus("Upload failed: " + (error.message || "Please try again."));
+      const message = error instanceof Error ? error.message : "Please try again.";
+      if (storageUploaded) {
+        const { error: cleanupError } = await supabase.storage.from(STORAGE_BUCKET).remove([path]);
+        if (cleanupError) {
+          console.error("Uploaded file cleanup error:", cleanupError);
+          setStatus(`Upload failed: ${message} The uploaded file could not be cleaned up automatically.`);
+        } else {
+          setStatus("Upload failed: " + message);
+        }
+      } else {
+        setStatus("Upload failed: " + message);
+      }
     } finally {
       setUploading(false);
     }
