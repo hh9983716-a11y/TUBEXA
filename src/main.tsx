@@ -764,7 +764,7 @@ function App() {
     }
   }
 
-  async function uploadProfileImage(file: File, kind: "avatar" | "cover") {
+  async function uploadProfileImage(file: File, kind: "avatar" | "cover", uploadedPaths: string[]) {
     if (!user) throw new Error("Please log in first.");
     if (!file.type.startsWith("image/")) throw new Error("Please select an image file.");
     if (file.size > 5 * 1024 * 1024) throw new Error("Profile images must be 5 MB or smaller.");
@@ -774,9 +774,10 @@ function App() {
 
     const { error: uploadError } = await supabase.storage
       .from(PROFILE_BUCKET)
-      .upload(path, file, { contentType: file.type, upsert: true });
+      .upload(path, file, { contentType: file.type, upsert: false });
 
     if (uploadError) throw uploadError;
+    uploadedPaths.push(path);
 
     const { data } = supabase.storage.from(PROFILE_BUCKET).getPublicUrl(path);
     return data.publicUrl;
@@ -802,12 +803,13 @@ function App() {
     setProfileLoading(true);
     setProfileMessage("Saving profile...");
 
+    const newlyUploadedPaths: string[] = [];
     try {
       let avatarUrl = profile?.avatar_url ?? null;
       let coverUrl = profile?.cover_url ?? null;
 
-      if (avatarFile) avatarUrl = await uploadProfileImage(avatarFile, "avatar");
-      if (coverFile) coverUrl = await uploadProfileImage(coverFile, "cover");
+      if (avatarFile) avatarUrl = await uploadProfileImage(avatarFile, "avatar", newlyUploadedPaths);
+      if (coverFile) coverUrl = await uploadProfileImage(coverFile, "cover", newlyUploadedPaths);
 
       const { data, error } = await supabase
         .from("profiles")
@@ -829,6 +831,14 @@ function App() {
       setCoverFile(null);
       setProfileMessage("Profile saved successfully!");
     } catch (error: any) {
+      if (newlyUploadedPaths.length) {
+        const { error: cleanupError } = await supabase.storage
+          .from(PROFILE_BUCKET)
+          .remove(newlyUploadedPaths);
+        if (cleanupError) {
+          console.error("Could not clean up unused profile images:", cleanupError.message);
+        }
+      }
       const message = error?.message || "Could not save profile.";
       setProfileMessage(
         message.toLowerCase().includes("duplicate") || message.toLowerCase().includes("unique")
