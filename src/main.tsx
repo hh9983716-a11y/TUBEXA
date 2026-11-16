@@ -340,23 +340,25 @@ function App() {
   useEffect(() => {
     let active = true;
     async function loadVideoViewCounts() {
-      if (myVideos.length === 0) {
-        setVideoViewCounts({});
-        return;
-      }
-      const counts = await Promise.all(myVideos.map(async video => {
+      const allVideos = [...myVideos, ...profileVideos, ...publicPlaylistVideos];
+      const uniqueVideos = [...new Map(allVideos.map(video => [video.id, video])).values()];
+      if (uniqueVideos.length === 0) return;
+      const counts = await Promise.all(uniqueVideos.map(async video => {
         const { data, error } = await supabase.rpc("tubexa_video_view_count", { p_video_id: video.id });
         if (error) {
           console.error("Could not load view count:", video.id, error.message);
-          return [video.id, 0] as const;
+          return null;
         }
         return [video.id, Number(data ?? 0)] as const;
       }));
-      if (active) setVideoViewCounts(Object.fromEntries(counts));
+      if (active) {
+        const successfulCounts = counts.filter((item): item is readonly [string, number] => item !== null);
+        setVideoViewCounts(current => ({ ...current, ...Object.fromEntries(successfulCounts) }));
+      }
     }
     loadVideoViewCounts();
     return () => { active = false; };
-  }, [myVideos]);
+  }, [myVideos, profileVideos, publicPlaylistVideos]);
 
   async function refreshVideoPlaybackUrl(video: Video, scope: "main" | "profile" | "publicPlaylist") {
     if (!video.storage_path || videoUrlRetryIds.includes(video.id)) return;
